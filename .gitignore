@@ -73,3 +73,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+BabyBillBackend/venv/
+BabyBillBackend/__pycache__/
+.env
