@@ -12,13 +12,31 @@ export default function ScanScreen({ navigation }) {
   const [zoom, setZoom] = useState(1);
   const [focusPoint, setFocusPoint] = useState(null);
 
-  // Get best format (highest resolution)
+  // Get best format: max photo resolution + best preview/video resolution
   const format = useMemo(() => {
     if (!device) return null;
-    const sortedFormats = [...device.formats].sort((a, b) => {
-      return (b.photoWidth * b.photoHeight) - (a.photoWidth * a.photoHeight);
-    });
-    return sortedFormats[0];
+
+    const formats = device.formats ?? [];
+    if (formats.length === 0) return null;
+
+    // Step 1: Find the maximum photo resolution available
+    const maxPhotoRes = Math.max(
+      ...formats.map((f) => (f.photoWidth ?? 0) * (f.photoHeight ?? 0))
+    );
+
+    // Step 2: Filter to only formats with that max photo resolution
+    const topPhotoFormats = formats.filter(
+      (f) => (f.photoWidth ?? 0) * (f.photoHeight ?? 0) === maxPhotoRes
+    );
+
+    // Step 3: Among those, pick the one with the best preview/video resolution
+    const best = [...topPhotoFormats].sort((a, b) => {
+      const aVideo = (a.videoWidth ?? 0) * (a.videoHeight ?? 0);
+      const bVideo = (b.videoWidth ?? 0) * (b.videoHeight ?? 0);
+      return bVideo - aVideo;
+    })[0];
+
+    return best ?? null;
   }, [device]);
 
   useEffect(() => {
@@ -63,7 +81,7 @@ export default function ScanScreen({ navigation }) {
   };
 
   const toggleFlash = () => {
-    setFlash(current => current === 'off' ? 'on' : 'off');
+    setFlash((current) => (current === 'off' ? 'on' : 'off'));
   };
 
   const zoomLevels = [1, 2, 3];
@@ -102,6 +120,7 @@ export default function ScanScreen({ navigation }) {
         enableZoomGesture={false}
         photoHdr={device.supportsPhotoHdr || false}
         lowLightBoost={device.supportsLowLightBoost || false}
+        resizeMode="cover"
         onTouchEnd={handleTapToFocus}
       />
 
@@ -163,8 +182,23 @@ const styles = StyleSheet.create({
   message: { fontSize: 18, color: '#fff', marginBottom: 20 },
   permissionBtn: { backgroundColor: '#3b82f6', padding: 15, borderRadius: 10 },
   permissionBtnText: { color: '#fff', fontSize: 16 },
-  topBar: { position: 'absolute', top: 50, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 },
-  topBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  topBar: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  topBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   topBtnText: { color: '#fff', fontSize: 20 },
   flashDot: { position: 'absolute', bottom: 2, width: 8, height: 8, borderRadius: 4 },
   focusIndicator: { position: 'absolute', width: 60, height: 60, borderWidth: 2, borderColor: '#FFD700', borderRadius: 10 },
