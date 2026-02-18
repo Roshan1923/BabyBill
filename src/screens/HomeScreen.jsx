@@ -19,6 +19,10 @@ const HomeScreen = ({navigation}) => {
   const [activeTag, setActiveTag] = useState('All');
   const [receipts, setReceipts] = useState([]);
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
   // Fetch receipts from Supabase
   const fetchReceipts = async () => {
     try {
@@ -103,10 +107,21 @@ const HomeScreen = ({navigation}) => {
       <StatusBar barStyle="light-content" backgroundColor="#030712" />
 
       {/* Header */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text style={{ color: '#ffffff', fontSize: 28, fontWeight: '800' }}>
           BabyBill
         </Text>
+        <TouchableOpacity
+          onPress={handleLogout}
+          style={{
+            backgroundColor: '#1f2937',
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 8,
+          }}
+        >
+          <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '600' }}>Log Out</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}

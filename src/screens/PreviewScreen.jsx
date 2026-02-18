@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, SafeAreaView, StatusBar, ActivityIndicator } from 'react-native';
 import { API_URL } from '../config/api';
+import { supabase } from '../config/supabase';
 
 export default function PreviewScreen({ route, navigation }) {
   const { photoPath } = route.params;
@@ -16,13 +17,22 @@ export default function PreviewScreen({ route, navigation }) {
     setUploading(true);
 
     try {
-      // Create form data with the photo
+      // Get logged-in user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to upload receipts.');
+        setUploading(false);
+        return;
+      }
+
+      // Create form data with the photo and user ID
       const formData = new FormData();
       formData.append('image', {
         uri: photoUri,
         type: 'image/jpeg',
         name: `receipt_${Date.now()}.jpg`,
       });
+      formData.append('user_id', user.id);
 
       console.log('📤 Sending photo to backend...');
 
