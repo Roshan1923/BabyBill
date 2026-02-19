@@ -80,9 +80,10 @@ For category, pick the best match from: Food, Bills, Gas, Shopping, Medical, Oth
     return json.loads(reply)
 
 
-def save_to_supabase(receipt_data, image_url):
+def save_to_supabase(receipt_data, image_url, user_id):
     """Save extracted receipt data to Supabase."""
     row = {
+        "user_id": user_id,
         "store_name": receipt_data.get("store_name", "Unknown"),
         "date": receipt_data.get("date", "Unknown"),
         "total_amount": receipt_data.get("total_amount", "0.00"),
@@ -139,11 +140,17 @@ def process_receipt():
         if "image" not in request.files:
             return jsonify({"error": "No image provided"}), 400
 
+        # Get user_id from request
+        user_id = request.form.get("user_id")
+        if not user_id:
+            return jsonify({"error": "No user_id provided"}), 400
+
         image_file = request.files["image"]
         image_bytes = image_file.read()
         filename = f"receipt_{int(__import__('time').time())}.jpg"
 
         print(f"📸 Received image: {len(image_bytes)} bytes")
+        print(f"👤 User ID: {user_id}")
 
         # Step 1: Upload image to Supabase Storage
         print("☁️ Uploading image to Supabase...")
@@ -164,7 +171,7 @@ def process_receipt():
 
         # Step 4: Save to Supabase Database
         print("💾 Saving to Supabase...")
-        saved = save_to_supabase(receipt_data, image_path)
+        saved = save_to_supabase(receipt_data, image_path, user_id)
 
         if saved:
             print("🎉 Receipt processed successfully!")
