@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import {
   View,
   Text,
@@ -12,6 +13,11 @@ import {
   Alert,
 } from 'react-native';
 import { supabase } from '../config/supabase';
+
+// Configure Google Sign-In with your Web Client ID
+GoogleSignin.configure({
+  webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+});
 
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
@@ -61,7 +67,38 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleGoogleSignIn = async () => {
-    Alert.alert('Coming Soon', 'Google Sign-In will be set up in Phase 7.4');
+    try {
+      setLoading(true);
+      await GoogleSignin.hasPlayServices();
+      const signInResult = await GoogleSignin.signIn();
+
+      const idToken = signInResult?.data?.idToken;
+      if (!idToken) {
+        Alert.alert('Error', 'Failed to get Google ID token.');
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+
+      if (error) {
+        Alert.alert('Google Sign-In Failed', error.message);
+      }
+      // Success → App.jsx auth listener navigates to Main automatically
+    } catch (error) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        // User cancelled — do nothing
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        // Already signing in
+      } else {
+        Alert.alert('Error', error.message || 'Google Sign-In failed.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAppleSignIn = async () => {
