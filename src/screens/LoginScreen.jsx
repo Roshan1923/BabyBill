@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import Icon from 'react-native-vector-icons/FontAwesome';
 import {
   View,
   Text,
@@ -140,8 +141,8 @@ const LoginScreen = ({ navigation }) => {
       >
         {/* Logo / App Name */}
         <View style={styles.headerSection}>
-          <Text style={styles.appName}>BabyBill</Text>
-          <Text style={styles.tagline}>Your receipts, organized.</Text>
+          <Text style={styles.appName}>BillBrain</Text>
+          <Text style={styles.tagline}>All Your Receipts. One Smart Brain.</Text>
         </View>
 
         {/* Login Form */}
@@ -213,12 +214,12 @@ const LoginScreen = ({ navigation }) => {
           {/* Social Login Buttons */}
           <View style={styles.socialContainer}>
             <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignIn}>
-              <Text style={styles.socialIcon}>G</Text>
+              <Icon name="google" size={20} color="#DB4437" />
               <Text style={styles.socialButtonText}>Google</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignIn}>
-              <Text style={styles.socialIcon}>🍎</Text>
+              <Icon name="apple" size={20} color="#fff" />
               <Text style={styles.socialButtonText}>Apple</Text>
             </TouchableOpacity>
           </View>

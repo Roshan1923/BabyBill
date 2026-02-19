@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   FlatList,
   StatusBar,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -107,21 +108,15 @@ const HomeScreen = ({navigation}) => {
       <StatusBar barStyle="light-content" backgroundColor="#030712" />
 
       {/* Header */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: '#ffffff', fontSize: 28, fontWeight: '800' }}>
-          BabyBill
+      <View style={{ paddingHorizontal: 16, paddingTop: 24, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
+        <Image
+          source={require('../assets/logo.png')}
+          style={{ width: 55, height: 55, marginRight: 10 }}
+          resizeMode="contain"
+        />
+        <Text style={{ color: '#ffff', fontSize: 22, fontWeight: '800' }}>
+          BillBrain
         </Text>
-        <TouchableOpacity
-          onPress={handleLogout}
-          style={{
-            backgroundColor: '#1f2937',
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            borderRadius: 8,
-          }}
-        >
-          <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '600' }}>Log Out</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
