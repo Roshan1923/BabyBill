@@ -428,7 +428,7 @@ export default function DetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#030712', paddingHorizontal: 16, paddingTop: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 20, marginBottom: 16 },
   backBtn: { color: '#3b82f6', fontSize: 17, fontWeight: '600' },
   deleteBtn: { color: '#ef4444', fontSize: 17, fontWeight: '600' },
 
