@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import Icon from 'react-native-vector-icons/FontAwesome';
 import {
   View,
   Text,
@@ -12,6 +14,11 @@ import {
   Alert,
 } from 'react-native';
 import { supabase } from '../config/supabase';
+
+// Configure Google Sign-In with your Web Client ID
+GoogleSignin.configure({
+  webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+});
 
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
@@ -61,7 +68,38 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleGoogleSignIn = async () => {
-    Alert.alert('Coming Soon', 'Google Sign-In will be set up in Phase 7.4');
+    try {
+      setLoading(true);
+      await GoogleSignin.hasPlayServices();
+      const signInResult = await GoogleSignin.signIn();
+
+      const idToken = signInResult?.data?.idToken;
+      if (!idToken) {
+        Alert.alert('Error', 'Failed to get Google ID token.');
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+
+      if (error) {
+        Alert.alert('Google Sign-In Failed', error.message);
+      }
+      // Success → App.jsx auth listener navigates to Main automatically
+    } catch (error) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        // User cancelled — do nothing
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        // Already signing in
+      } else {
+        Alert.alert('Error', error.message || 'Google Sign-In failed.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAppleSignIn = async () => {
@@ -103,8 +141,8 @@ const LoginScreen = ({ navigation }) => {
       >
         {/* Logo / App Name */}
         <View style={styles.headerSection}>
-          <Text style={styles.appName}>BabyBill</Text>
-          <Text style={styles.tagline}>Your receipts, organized.</Text>
+          <Text style={styles.appName}>BillBrain</Text>
+          <Text style={styles.tagline}>All Your Receipts. One Smart Brain.</Text>
         </View>
 
         {/* Login Form */}
@@ -176,12 +214,12 @@ const LoginScreen = ({ navigation }) => {
           {/* Social Login Buttons */}
           <View style={styles.socialContainer}>
             <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignIn}>
-              <Text style={styles.socialIcon}>G</Text>
+              <Icon name="google" size={20} color="#DB4437" />
               <Text style={styles.socialButtonText}>Google</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignIn}>
-              <Text style={styles.socialIcon}>🍎</Text>
+              <Icon name="apple" size={20} color="#fff" />
               <Text style={styles.socialButtonText}>Apple</Text>
             </TouchableOpacity>
           </View>
