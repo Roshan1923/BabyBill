@@ -15,6 +15,7 @@ import { supabase } from './src/config/supabase';
 import TabNavigator from './src/navigation/TabNavigator';
 import DetailScreen from './src/screens/DetailScreen';
 import PreviewScreen from './src/screens/PreviewScreen';
+import ManualEntryScreen from './src/screens/ManualEntryScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -87,6 +88,11 @@ const App = () => {
               <Stack.Screen
                 name="Preview"
                 component={PreviewScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="ManualEntry"
+                component={ManualEntryScreen}
                 options={{ animation: 'slide_from_right' }}
               />
             </>

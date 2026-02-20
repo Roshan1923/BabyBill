@@ -53,7 +53,11 @@ Return ONLY valid JSON with this exact format:
 {
     "store_name": "Store Name",
     "date": "YYYY-MM-DD",
+    "subtotal": "0.00",
+    "tax": "0.00",
+    "discount": "0.00",
     "total_amount": "0.00",
+    "payment_method": "Cash | Credit Card | Debit Card | Gift Card | Unknown",
     "category": "Food|Bills|Gas|Shopping|Medical|Other",
     "items": [
         {"name": "Item name", "price": "0.00", "quantity": 1}
@@ -86,7 +90,11 @@ def save_to_supabase(receipt_data, image_url, user_id):
         "user_id": user_id,
         "store_name": receipt_data.get("store_name", "Unknown"),
         "date": receipt_data.get("date", "Unknown"),
+        "subtotal": receipt_data.get("subtotal", "0.00"),
+        "tax": receipt_data.get("tax", "0.00"),
+        "discount": receipt_data.get("discount", "0.00"),
         "total_amount": receipt_data.get("total_amount", "0.00"),
+        "payment_method": receipt_data.get("payment_method", "Unknown"),
         "category": receipt_data.get("category", "Other"),
         "items": receipt_data.get("items", []),
         "raw_text": receipt_data.get("raw_text", ""),
