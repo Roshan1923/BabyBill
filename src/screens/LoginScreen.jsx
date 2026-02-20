@@ -16,10 +16,12 @@ import {
 import { supabase } from '../config/supabase';
 
 // Configure Google Sign-In with your Web Client ID
-GoogleSignin.configure({
-  webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
-});
-
+// Configure Google Sign-In with your Web Client ID
+if (Platform.OS !== 'ios') {
+  GoogleSignin.configure({
+    webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+  });
+}
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
