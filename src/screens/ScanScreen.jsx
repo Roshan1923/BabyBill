@@ -1,6 +1,8 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 
 export default function ScanScreen({ navigation }) {
@@ -64,6 +66,30 @@ export default function ScanScreen({ navigation }) {
 
   const toggleFlash = () => {
     setFlash(current => current === 'off' ? 'on' : 'off');
+  };
+
+  const handleGallery = () => {
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 1,
+        maxWidth: 4000,
+        maxHeight: 4000,
+      },
+      (response) => {
+        if (response.didCancel) return;
+        if (response.errorCode) {
+          Alert.alert('Error', response.errorMessage || 'Failed to pick image');
+          return;
+        }
+        if (response.assets && response.assets[0]) {
+          const uri = response.assets[0].uri;
+          // Remove file:// prefix if present since PreviewScreen adds it
+          const path = uri.replace('file://', '');
+          navigation.navigate('Preview', { photoPath: path });
+        }
+      }
+    );
   };
 
   const zoomLevels = [1, 2, 3];
@@ -147,9 +173,17 @@ export default function ScanScreen({ navigation }) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.captureCircle} onPress={handleCapture}>
-          <View style={styles.captureInner} />
-        </TouchableOpacity>
+        <View style={styles.captureRow}>
+          <TouchableOpacity style={styles.galleryBtn} onPress={handleGallery}>
+            <Icon name="images-outline" size={26} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.captureCircle} onPress={handleCapture}>
+            <View style={styles.captureInner} />
+          </TouchableOpacity>
+
+          <View style={{ width: 50 }} />
+        </View>
 
         <View style={{ height: 20 }} />
       </View>
@@ -174,6 +208,8 @@ const styles = StyleSheet.create({
   zoomBtnActive: { backgroundColor: '#FFD700' },
   zoomText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   zoomTextActive: { color: '#000' },
+  captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: 50 },
+  galleryBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center'},
   captureCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center', borderWidth: 4, borderColor: '#fff' },
   captureInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
 });
