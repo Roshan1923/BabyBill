@@ -13,6 +13,40 @@ export default function PreviewScreen({ route, navigation }) {
     navigation.goBack();
   };
 
+  const handleForceSave = async (receiptData, imagePath, userId) => {
+    setUploading(true);
+    try {
+      const response = await fetch(`${API_URL}/force-save-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          receipt_data: receiptData,
+          image_path: imagePath,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        Alert.alert(
+          'Receipt Saved!',
+          `Store: ${result.receipt.store_name}\nTotal: $${result.receipt.total_amount}`,
+          [
+            { text: 'Scan Another', onPress: () => navigation.navigate('Main', { screen: 'Scan' }) },
+            { text: 'Go Home', onPress: () => navigation.navigate('Main', { screen: 'Home' }) },
+          ]
+        );
+      } else {
+        Alert.alert('Error', result.error || 'Failed to save receipt');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Could not reach the server.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleConfirm = async () => {
     setUploading(true);
 
@@ -54,6 +88,21 @@ export default function PreviewScreen({ route, navigation }) {
           [
             { text: 'Scan Another', onPress: () => navigation.navigate('Main', { screen: 'Scan' }) },
             { text: 'Go Home', onPress: () => navigation.navigate('Main', { screen: 'Home' }) },
+          ]
+        );
+      } else if (result.duplicate) {
+        // Duplicate detected — ask user what to do
+        console.log('⚠️ Duplicate receipt detected');
+        setUploading(false);
+        Alert.alert(
+          'Duplicate Receipt',
+          `A receipt from ${result.receipt_data.store_name} on ${result.receipt_data.date} for $${result.receipt_data.total_amount} already exists.\n\nWould you like to save it anyway?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
+            {
+              text: 'Save Anyway',
+              onPress: () => handleForceSave(result.receipt_data, result.image_path, user.id),
+            },
           ]
         );
       } else {
