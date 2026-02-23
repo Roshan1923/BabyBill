@@ -69,10 +69,10 @@ export default function ManualEntryScreen({ navigation }) {
         date: date || new Date().toISOString().split('T')[0],
         category: category,
         payment_method: paymentMethod || 'Unknown',
-        subtotal: parseFloat(subtotal) || 0,
-        tax: parseFloat(tax) || 0,
-        discount: parseFloat(discount) || 0,
-        total_amount: parseFloat(totalAmount) || 0,
+        subtotal: subtotal || 0,
+        tax: tax || 0,
+        discount: discount || 0,
+        total_amount: totalAmount || 0,
         items: items.filter(i => i.name.trim()).map(item => ({
           name: item.name.trim(),
           price: parseFloat(item.price) || 0,
@@ -80,8 +80,8 @@ export default function ManualEntryScreen({ navigation }) {
         })),
         notes: notes,
         status: 'completed',
-        image_url: null,
-        raw_text: null,
+        image_url: '',
+        raw_text: '',
       });
 
     return error;
@@ -119,7 +119,7 @@ export default function ManualEntryScreen({ navigation }) {
                 const error = await saveReceipt(user.id);
                 setSaving(false);
                 if (error) {
-                  Alert.alert('Error', 'Failed to save receipt');
+                  Alert.alert('Error', 'Failed to save: ' + JSON.stringify(error));
                   console.log('Save error:', error);
                 } else {
                   Alert.alert('Saved!', 'Receipt added successfully', [
@@ -136,7 +136,7 @@ export default function ManualEntryScreen({ navigation }) {
       // No duplicate — save normally
       const error = await saveReceipt(user.id);
       if (error) {
-        Alert.alert('Error', 'Failed to save receipt');
+        Alert.alert('Error', 'Failed to save: ' + JSON.stringify(error));
         console.log('Save error:', error);
       } else {
         Alert.alert('Saved!', 'Receipt added successfully', [
