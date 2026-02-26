@@ -1,192 +1,205 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Alert, SafeAreaView, StatusBar, ActivityIndicator } from 'react-native';
-import { API_URL } from '../config/api';
-import { supabase } from '../config/supabase';
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Platform,
+  Animated,
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+
+// Frosted overlay — matches ScanScreen
+const OVERLAY = {
+  btnBg:     'rgba(15, 15, 15, 0.5)',
+  btnBorder: 'rgba(255, 255, 255, 0.15)',
+  pillBg:    'rgba(15, 15, 15, 0.55)',
+  pillBorder:'rgba(255, 255, 255, 0.12)',
+};
 
 export default function PreviewScreen({ route, navigation }) {
   const { photoPath } = route.params;
   const photoUri = 'file://' + photoPath;
-  const [uploading, setUploading] = useState(false);
 
-  const handleRetake = () => {
-    navigation.goBack();
+  const [rotation, setRotation] = useState(0);
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  const handleRotate = () => {
+    const next = rotation + 90;
+    setRotation(next);
+
+    // Image rotation
+    Animated.spring(rotateAnim, {
+      toValue: next / 90,
+      useNativeDriver: true,
+      speed: 18,
+      bounciness: 4,
+    }).start();
+
+    // Icon spin feedback
+    spinAnim.setValue(0);
+    Animated.timing(spinAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
   };
 
-  const handleForceSave = async (receiptData, imagePath, userId) => {
-    setUploading(true);
-    try {
-      const response = await fetch(`${API_URL}/force-save-receipt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          receipt_data: receiptData,
-          image_path: imagePath,
-        }),
-      });
+  const rotateInterpolate = rotateAnim.interpolate({
+    inputRange: Array.from({ length: 20 }, (_, i) => i),
+    outputRange: Array.from({ length: 20 }, (_, i) => `${i * 90}deg`),
+  });
 
-      const result = await response.json();
+  const iconSpin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-90deg'],
+  });
 
-      if (result.success) {
-        Alert.alert(
-          'Receipt Saved!',
-          `Store: ${result.receipt.store_name}\nTotal: $${result.receipt.total_amount}`,
-          [
-            { text: 'Scan Another', onPress: () => navigation.navigate('Main', { screen: 'Scan' }) },
-            { text: 'Go Home', onPress: () => navigation.navigate('Main', { screen: 'Home' }) },
-          ]
-        );
-      } else {
-        Alert.alert('Error', result.error || 'Failed to save receipt');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Could not reach the server.');
-    } finally {
-      setUploading(false);
-    }
-  };
+  const handleRetake = () => navigation.goBack();
 
-  const handleConfirm = async () => {
-    setUploading(true);
-
-    try {
-      // Get logged-in user's ID
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to upload receipts.');
-        setUploading(false);
-        return;
-      }
-
-      // Create form data with the photo and user ID
-      const formData = new FormData();
-      formData.append('image', {
-        uri: photoUri,
-        type: 'image/jpeg',
-        name: `receipt_${Date.now()}.jpg`,
-      });
-      formData.append('user_id', user.id);
-
-      console.log('📤 Sending photo to backend...');
-
-      const response = await fetch(`${API_URL}/process-receipt`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        console.log('✅ Receipt processed!', result.receipt);
-        Alert.alert(
-          'Receipt Processed!',
-          `Store: ${result.receipt.store_name}\nTotal: $${result.receipt.total_amount}`,
-          [
-            { text: 'Scan Another', onPress: () => navigation.navigate('Main', { screen: 'Scan' }) },
-            { text: 'Go Home', onPress: () => navigation.navigate('Main', { screen: 'Home' }) },
-          ]
-        );
-      } else if (result.duplicate) {
-        // Duplicate detected — ask user what to do
-        console.log('⚠️ Duplicate receipt detected');
-        setUploading(false);
-        Alert.alert(
-          'Duplicate Receipt',
-          `A receipt from ${result.receipt_data.store_name} on ${result.receipt_data.date} for $${result.receipt_data.total_amount} already exists.\n\nWould you like to save it anyway?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => navigation.goBack() },
-            {
-              text: 'Save Anyway',
-              onPress: () => handleForceSave(result.receipt_data, result.image_path, user.id),
-            },
-          ]
-        );
-      } else {
-        console.log('❌ Error:', result.error);
-        Alert.alert('Error', result.error || 'Failed to process receipt');
-      }
-    } catch (error) {
-      console.log('❌ Network error:', error);
-      Alert.alert(
-        'Connection Error',
-        'Could not reach the server. Make sure the backend is running and you are on the same WiFi network.'
-      );
-    } finally {
-      setUploading(false);
-    }
+  const handleKeep = () => {
+    // TODO: Screen 3 — add to local scan queue
+    navigation.navigate('Main', {
+      screen: 'Home',
+      params: { newScan: { photoPath, rotation } },
+    });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#030712" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Preview</Text>
-      </View>
+      {/* ── Full bleed image ── */}
+      <Animated.Image
+        source={{ uri: photoUri }}
+        style={[
+          StyleSheet.absoluteFill,
+          { transform: [{ rotate: rotateInterpolate }] },
+        ]}
+        resizeMode="contain"
+      />
 
-      {/* Photo */}
-      <View style={styles.imageBox}>
-        <Image
-          source={{ uri: photoUri }}
-          style={styles.image}
-          resizeMode="contain"
-        />
+      {/* ── Top gradient fade ── */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.15)', 'transparent']}
+        style={styles.topGradient}
+        pointerEvents="none"
+      />
 
-        {/* Uploading overlay */}
-        {uploading && (
-          <View style={styles.overlay}>
-            <ActivityIndicator size="large" color="#3b82f6" />
-            <Text style={styles.overlayText}>Processing receipt...</Text>
-            <Text style={styles.overlaySubtext}>This may take 10-15 seconds</Text>
-          </View>
-        )}
-      </View>
+      {/* ── Bottom gradient fade ── */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.5)']}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      />
 
-      {/* Buttons */}
-      <View style={styles.btnRow}>
+      {/* ── Top Bar: Retake & Keep ── */}
+      <View style={styles.topBar}>
         <TouchableOpacity
-          style={[styles.retakeBtn, uploading && styles.disabledBtn]}
+          style={styles.topBtn}
           onPress={handleRetake}
-          disabled={uploading}
+          activeOpacity={0.7}
         >
-          <Text style={styles.btnText}>↻ Retake</Text>
+          <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
+
         <TouchableOpacity
-          style={[styles.confirmBtn, uploading && styles.disabledBtn]}
-          onPress={handleConfirm}
-          disabled={uploading}
+          style={styles.topBtn}
+          onPress={handleKeep}
+          activeOpacity={0.7}
         >
-          <Text style={styles.btnText}>
-            {uploading ? 'Processing...' : 'Confirm ✓'}
-          </Text>
+          <Ionicons name="checkmark" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+
+      {/* ── Bottom: Rotate pill ── */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.rotatePill}
+          onPress={handleRotate}
+          activeOpacity={0.7}
+        >
+          <Animated.View style={{ transform: [{ rotate: iconSpin }] }}>
+            <Ionicons name="sync-outline" size={18} color="#fff" />
+          </Animated.View>
+          <Text style={styles.rotateText}>Rotate</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#030712', padding: 20, paddingTop: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingTop: 10 },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  imageBox: { flex: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: '#1f2937' },
-  image: { width: '100%', height: '100%' },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
   },
-  overlayText: { color: '#fff', fontSize: 18, fontWeight: '600', marginTop: 16 },
-  overlaySubtext: { color: '#9ca3af', fontSize: 13, marginTop: 6 },
-  btnRow: { flexDirection: 'row', marginTop: 15 },
-  retakeBtn: { backgroundColor: '#4b5563', paddingVertical: 15, borderRadius: 10, flex: 1, marginRight: 10, alignItems: 'center' },
-  confirmBtn: { backgroundColor: '#22c55e', paddingVertical: 15, borderRadius: 10, flex: 1, marginLeft: 10, alignItems: 'center' },
-  disabledBtn: { opacity: 0.5 },
-  btnText: { fontSize: 18, color: '#fff', fontWeight: '600' },
+
+  // ─── Gradients ───────────────────────────────────────────
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 140,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 160,
+  },
+
+  // ─── Top Bar ─────────────────────────────────────────────
+  topBar: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  topBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: OVERLAY.btnBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: OVERLAY.btnBorder,
+  },
+
+  // ─── Bottom Bar ──────────────────────────────────────────
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  rotatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: OVERLAY.pillBg,
+    borderWidth: 1,
+    borderColor: OVERLAY.pillBorder,
+  },
+  rotateText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
 });
