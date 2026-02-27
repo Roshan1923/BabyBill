@@ -21,6 +21,9 @@ import {
 } from '../utils/permissions';
 import { useScanQueue } from '../context/ScanContext';
 
+// ✅ NEW: Preview overlay component (create this file as given earlier)
+import PreviewOverlay from '../components/PreviewOverlay';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── Design System Tokens ────────────────────────────────────
@@ -55,7 +58,9 @@ export default function ScanScreen({ navigation }) {
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
-  const { scans, clearScans } = useScanQueue();
+
+  // ✅ CHANGED: also grab addScan (we add scan from the overlay)
+  const { scans, clearScans, addScan } = useScanQueue();
 
   const hasScans = scans.length > 0;
 
@@ -76,6 +81,12 @@ export default function ScanScreen({ navigation }) {
   const captureScale = useRef(new Animated.Value(1)).current;
   const zoomIndicatorOpacity = useRef(new Animated.Value(0)).current;
   const badgePulse = useRef(new Animated.Value(1)).current;
+
+  // ✅ NEW: Preview overlay state + measurement
+  const leftTargetRef = useRef(null); // measures bottom-left slot (gallery OR thumb stack)
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewPhotoPath, setPreviewPhotoPath] = useState(null);
+  const [previewTargetCenter, setPreviewTargetCenter] = useState(null);
 
   // Best format
   const format = useMemo(() => {
@@ -111,6 +122,7 @@ export default function ScanScreen({ navigation }) {
         bounciness: 12,
       }).start();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scans.length]);
 
   const showError = useCallback((title, message, settingsBtn = false) => {
@@ -118,6 +130,22 @@ export default function ScanScreen({ navigation }) {
     setErrorMessage(message);
     setShowSettingsBtn(settingsBtn);
     setShowErrorModal(true);
+  }, []);
+
+  // ✅ NEW: open preview overlay and pass real measured target position
+  const openPreview = useCallback((path) => {
+    if (leftTargetRef.current) {
+      leftTargetRef.current.measureInWindow((x, y, w, h) => {
+        setPreviewTargetCenter({ x: x + w / 2, y: y + h / 2 });
+        setPreviewPhotoPath(path);
+        setPreviewVisible(true);
+      });
+    } else {
+      const { height } = Dimensions.get('window');
+      setPreviewTargetCenter({ x: 60, y: height - 120 });
+      setPreviewPhotoPath(path);
+      setPreviewVisible(true);
+    }
   }, []);
 
   // ─── Tap to focus ──────────────────────────────────────────
@@ -159,7 +187,9 @@ export default function ScanScreen({ navigation }) {
         enableAutoRedEyeReduction: true,
         enableAutoStabilization: true,
       });
-      navigation.navigate('Preview', { photoPath: photo.path });
+
+      // ✅ CHANGED: open overlay instead of navigating to Preview screen
+      openPreview(photo.path);
     } catch (error) {
       showError('Capture Failed', 'Something went wrong while taking the photo. Please try again.');
     } finally {
@@ -202,7 +232,9 @@ export default function ScanScreen({ navigation }) {
         if (response.assets && response.assets[0]) {
           const uri = response.assets[0].uri;
           const path = uri.replace('file://', '');
-          navigation.navigate('Preview', { photoPath: path });
+
+          // ✅ CHANGED: open overlay instead of navigating to Preview screen
+          openPreview(path);
         }
       }
     );
@@ -374,44 +406,47 @@ export default function ScanScreen({ navigation }) {
         {/* Capture row */}
         <View style={styles.captureRow}>
 
-          {/* Left button — Gallery (fresh) or Thumbnail stack (accumulation) */}
-          {hasScans ? (
-            <TouchableOpacity style={styles.thumbnailWrap} onPress={handleThumbnailTap} activeOpacity={0.7}>
-              {/* 3rd card back (if 3+ scans) */}
-              {scans.length > 2 && (
-                <View style={[styles.stackCard, styles.stackCard3]}>
+          {/* ✅ CHANGED: wrap left slot with measurable View */}
+          <View ref={leftTargetRef} collapsable={false}>
+            {/* Left button — Gallery (fresh) or Thumbnail stack (accumulation) */}
+            {hasScans ? (
+              <TouchableOpacity style={styles.thumbnailWrap} onPress={handleThumbnailTap} activeOpacity={0.7}>
+                {/* 3rd card back (if 3+ scans) */}
+                {scans.length > 2 && (
+                  <View style={[styles.stackCard, styles.stackCard3]}>
+                    <Image
+                      source={{ uri: 'file://' + scans[scans.length - 3].photoPath }}
+                      style={styles.stackCardImage}
+                    />
+                  </View>
+                )}
+                {/* 2nd card back (if 2+ scans) */}
+                {scans.length > 1 && (
+                  <View style={[styles.stackCard, styles.stackCard2]}>
+                    <Image
+                      source={{ uri: 'file://' + scans[scans.length - 2].photoPath }}
+                      style={styles.stackCardImage}
+                    />
+                  </View>
+                )}
+                {/* Top card — latest scan */}
+                <Animated.View style={[styles.stackCardTop, { transform: [{ scale: badgePulse }] }]}>
                   <Image
-                    source={{ uri: 'file://' + scans[scans.length - 3].photoPath }}
+                    source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
                     style={styles.stackCardImage}
                   />
-                </View>
-              )}
-              {/* 2nd card back (if 2+ scans) */}
-              {scans.length > 1 && (
-                <View style={[styles.stackCard, styles.stackCard2]}>
-                  <Image
-                    source={{ uri: 'file://' + scans[scans.length - 2].photoPath }}
-                    style={styles.stackCardImage}
-                  />
-                </View>
-              )}
-              {/* Top card — latest scan */}
-              <Animated.View style={[styles.stackCardTop, { transform: [{ scale: badgePulse }] }]}>
-                <Image
-                  source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
-                  style={styles.stackCardImage}
-                />
-              </Animated.View>
-              {/* Badge — overlaps corner */}
-              <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
-                <Text style={styles.countBadgeText}>{scans.length}</Text>
-              </Animated.View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
-              <Ionicons name="images" size={24} color="#fff" />
-            </TouchableOpacity>
-          )}
+                </Animated.View>
+                {/* Badge — overlaps corner */}
+                <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
+                  <Text style={styles.countBadgeText}>{scans.length}</Text>
+                </Animated.View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
+                <Ionicons name="images" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Capture button */}
           <TouchableOpacity
@@ -522,6 +557,22 @@ export default function ScanScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* ✅ NEW: Preview overlay (camera remains behind = Apple Notes illusion) */}
+      <PreviewOverlay
+        visible={previewVisible}
+        photoPath={previewPhotoPath}
+        targetCenter={previewTargetCenter}
+        onRetake={() => {
+          setPreviewVisible(false);
+          setPreviewPhotoPath(null);
+        }}
+        onKeep={({ photoPath, rotation }) => {
+          addScan({ photoPath, rotation });
+          setPreviewVisible(false);
+          setPreviewPhotoPath(null);
+        }}
+      />
     </View>
   );
 }
