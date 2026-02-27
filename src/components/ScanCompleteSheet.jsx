@@ -13,7 +13,7 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_HEIGHT = SCREEN_HEIGHT * 0.38;
+const SHEET_HEIGHT = SCREEN_HEIGHT * 0.45;
 
 const DS = {
   bgSurface:     '#FFFEFB',
@@ -392,7 +392,8 @@ const styles = StyleSheet.create({
 
   // Buttons
   btnArea: {
-    gap: 10,
+    gap: 12,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 16,
   },
   primaryBtn: {
     flexDirection: 'row',
@@ -420,11 +421,12 @@ const styles = StyleSheet.create({
   secondaryBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 40,
+    height: 44,
+    marginTop: 2,
   },
   secondaryBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: DS.textSecondary,
+    color: '#C8402A',
   },
 });
