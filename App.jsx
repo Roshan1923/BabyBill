@@ -99,8 +99,11 @@ const App = () => {
                     component={ManualEntryScreen}
                     options={{ animation: 'slide_from_right' }}
                   />
-                  <Stack.Screen name="ReviewReceipt" component={ReviewReceiptScreen} 
-  options={{ headerShown: false }} />
+                  <Stack.Screen 
+                  name="ReviewReceipt" 
+                  component={ReviewReceiptScreen} 
+                  options={{ headerShown: false }} 
+                  />
                   <Stack.Screen
                   name="ScanGallery"
                   component={ScanGalleryScreen}
