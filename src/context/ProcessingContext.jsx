@@ -113,6 +113,25 @@ export function ProcessingProvider({ children }) {
               : j
           )
         );
+      } else if (result.duplicate) {
+        // Duplicate detected — mark as failed with clear message
+        const store = result.receipt_data?.store_name || 'this store';
+        const total = result.receipt_data?.total_amount || '?';
+        updateJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id
+              ? {
+                  ...j,
+                  status: STATUS.FAILED,
+                  storeName: store,
+                  error: `Duplicate receipt: A receipt from ${store} for $${total} on the same date already exists.`,
+                  isDuplicate: true,
+                  duplicateData: result.receipt_data,
+                  duplicateImagePath: result.image_path,
+                }
+              : j
+          )
+        );
       } else {
         // Backend returned error
         updateJobs((prev) =>
@@ -121,7 +140,7 @@ export function ProcessingProvider({ children }) {
               ? {
                   ...j,
                   status: STATUS.FAILED,
-                  error: result.error || 'Processing failed',
+                  error: result.error || 'Processing failed. Please try again.',
                 }
               : j
           )
@@ -162,6 +181,64 @@ export function ProcessingProvider({ children }) {
     processOne(job, user.id);
   }, [updateJobStatus, processOne]);
 
+  // Force save a duplicate receipt
+  const forceSave = useCallback(async (jobId) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const job = jobsRef.current.find((j) => j.id === jobId);
+    if (!job || !job.isDuplicate) return;
+
+    updateJobStatus(jobId, STATUS.PROCESSING);
+
+    try {
+      const response = await fetch(`${API_URL}/force-save-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          receipt_data: job.duplicateData,
+          image_path: job.duplicateImagePath,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        updateJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId
+              ? {
+                  ...j,
+                  status: STATUS.READY,
+                  storeName: result.receipt?.store_name || job.storeName,
+                  receiptData: result.receipt,
+                  error: null,
+                  isDuplicate: false,
+                }
+              : j
+          )
+        );
+      } else {
+        updateJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId
+              ? { ...j, status: STATUS.FAILED, error: result.error || 'Force save failed' }
+              : j
+          )
+        );
+      }
+    } catch (error) {
+      updateJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? { ...j, status: STATUS.FAILED, error: error.message || 'Network error' }
+            : j
+        )
+      );
+    }
+  }, [updateJobStatus, updateJobs]);
+
   // Mark a job as reviewed (moves it out of To Review)
   const markReviewed = useCallback((jobId) => {
     updateJobs((prev) =>
@@ -187,6 +264,7 @@ export function ProcessingProvider({ children }) {
         getPendingCount,
         processBatch,
         retryJob,
+        forceSave,
         markReviewed,
         removeJob,
         clearReviewed,

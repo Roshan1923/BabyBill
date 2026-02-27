@@ -238,7 +238,7 @@ export default function ReceiptsScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
 
   // Processing queue from context
-  const { jobs, getReviewItems, getPendingCount, retryJob, markReviewed } = useProcessing();
+  const { jobs, getReviewItems, getPendingCount, retryJob, forceSave, markReviewed } = useProcessing();
   const reviewItems = jobs.filter((j) => j.status !== 'reviewed');
   const hasReviewItems = reviewItems.length > 0;
 
@@ -296,15 +296,21 @@ export default function ReceiptsScreen({ navigation, route }) {
   };
 
   const handleReviewPress = (item) => {
-    // Navigate to detail view with the processed receipt data
+    // Navigate to review screen — user must explicitly save
     if (item.receiptData) {
-      markReviewed(item.id);
-      navigation.navigate("Detail", { receipt: item.receiptData });
+      navigation.navigate('ReviewReceipt', {
+        jobId: item.id,
+        receipt: item.receiptData,
+      });
     }
   };
 
   const handleRetry = (item) => {
     retryJob(item.id);
+  };
+
+  const handleForceSave = (item) => {
+    forceSave(item.id);
   };
 
   return (
@@ -352,6 +358,7 @@ export default function ReceiptsScreen({ navigation, route }) {
           items={reviewItems}
           onPressItem={handleReviewPress}
           onRetry={handleRetry}
+          onForceSave={handleForceSave}
         />
       ) : (
         /* ── Saved Tab (existing receipts UI) ── */

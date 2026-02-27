@@ -134,7 +134,7 @@ const STATUS_CONFIG = {
 
 // ─── Review Card ─────────────────────────────────────────────
 
-function ReviewCard({ item, onPress, onRetry }) {
+function ReviewCard({ item, onPress, onRetry, onForceSave }) {
   const scale = useRef(new Animated.Value(1)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
@@ -263,19 +263,35 @@ function ReviewCard({ item, onPress, onRetry }) {
           {isFailed && expanded && (
             <View style={styles.errorSection}>
               <View style={styles.errorBox}>
-                <Ionicons name="information-circle-outline" size={16} color={DS.negative} />
-                <Text style={styles.errorText} numberOfLines={3}>
+                <Ionicons
+                  name={item.isDuplicate ? 'copy-outline' : 'information-circle-outline'}
+                  size={16}
+                  color={DS.negative}
+                />
+                <Text style={styles.errorText} numberOfLines={4}>
                   {item.error || 'An unknown error occurred while processing this receipt.'}
                 </Text>
               </View>
-              <TouchableOpacity
-                style={styles.retryBtn}
-                onPress={() => onRetry?.(item)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="refresh" size={16} color={DS.textInverse} />
-                <Text style={styles.retryBtnText}>Retry</Text>
-              </TouchableOpacity>
+              <View style={styles.errorBtnRow}>
+                {item.isDuplicate && (
+                  <TouchableOpacity
+                    style={styles.saveAnywayBtn}
+                    onPress={() => onForceSave?.(item)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="save-outline" size={15} color={DS.brandNavy} />
+                    <Text style={styles.saveAnywayText}>Save Anyway</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.retryBtn, item.isDuplicate && { flex: 1 }]}
+                  onPress={() => onRetry?.(item)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh" size={16} color={DS.textInverse} />
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>
@@ -351,12 +367,13 @@ function EmptyReview() {
 
 // ─── Main Component ──────────────────────────────────────────
 
-export default function ToReviewReceipts({ items = [], onPressItem, onRetry }) {
+export default function ToReviewReceipts({ items = [], onPressItem, onRetry, onForceSave }) {
   const renderItem = ({ item, index }) => (
     <ReviewCard
       item={{ ...item, index: index + 1 }}
       onPress={() => onPressItem?.(item)}
       onRetry={() => onRetry?.(item)}
+      onForceSave={() => onForceSave?.(item)}
     />
   );
 
@@ -547,6 +564,27 @@ const styles = StyleSheet.create({
     color: DS.negative,
     lineHeight: 18,
   },
+  errorBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  saveAnywayBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#E8EFF8',
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(26, 58, 107, 0.15)',
+  },
+  saveAnywayText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: DS.brandNavy,
+  },
   retryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -555,6 +593,7 @@ const styles = StyleSheet.create({
     backgroundColor: DS.negative,
     height: 38,
     borderRadius: 10,
+    flex: 1,
   },
   retryBtnText: {
     fontSize: 14,
