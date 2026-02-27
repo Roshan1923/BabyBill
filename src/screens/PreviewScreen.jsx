@@ -8,10 +8,13 @@ import {
   StatusBar,
   Platform,
   Animated,
+  Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useScanQueue } from '../context/ScanContext';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Frosted overlay — matches ScanScreen
 const OVERLAY = {
@@ -27,10 +30,20 @@ export default function PreviewScreen({ route, navigation }) {
   const { addScan } = useScanQueue();
 
   const [rotation, setRotation] = useState(0);
+  const [flyingAway, setFlyingAway] = useState(false);
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
 
+  // Fly animation values
+  const flyScale = useRef(new Animated.Value(1)).current;
+  const flyX = useRef(new Animated.Value(0)).current;
+  const flyY = useRef(new Animated.Value(0)).current;
+  const flyOpacity = useRef(new Animated.Value(1)).current;
+  const flyBorderRadius = useRef(new Animated.Value(0)).current;
+  const uiOpacity = useRef(new Animated.Value(1)).current;
+
   const handleRotate = () => {
+    if (flyingAway) return;
     const next = rotation + 90;
     setRotation(next);
 
@@ -59,43 +72,97 @@ export default function PreviewScreen({ route, navigation }) {
     outputRange: ['0deg', '-90deg'],
   });
 
-  const handleRetake = () => navigation.goBack();
+  const handleRetake = () => {
+    if (flyingAway) return;
+    navigation.goBack();
+  };
 
   const handleKeep = () => {
-    addScan({ photoPath, rotation });
-    navigation.goBack(); // Back to camera — now in accumulation state
+    if (flyingAway) return;
+    setFlyingAway(true);
+
+    // Target: bottom-left thumbnail position on camera screen
+    const targetX = -(SCREEN_WIDTH / 2) + 70;
+    const targetY = (SCREEN_HEIGHT / 2) - 120;
+
+    // Fade out UI elements immediately
+    Animated.timing(uiOpacity, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+
+    // Fly the image to thumbnail position
+    Animated.parallel([
+      Animated.timing(flyScale, {
+        toValue: 0.12,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(flyX, {
+        toValue: targetX,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(flyY, {
+        toValue: targetY,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(flyOpacity, {
+        toValue: 0,
+        duration: 400,
+        delay: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      addScan({ photoPath, rotation });
+      navigation.goBack();
+    });
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* ── Full bleed image ── */}
+      {/* ── Full bleed image with fly animation ── */}
       <Animated.Image
         source={{ uri: photoUri }}
         style={[
           StyleSheet.absoluteFill,
-          { transform: [{ rotate: rotateInterpolate }] },
+          {
+            opacity: flyOpacity,
+            transform: [
+              { translateX: flyX },
+              { translateY: flyY },
+              { scale: flyScale },
+              { rotate: rotateInterpolate },
+            ],
+          },
         ]}
         resizeMode="contain"
       />
 
       {/* ── Top gradient fade ── */}
-      <LinearGradient
-        colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.15)', 'transparent']}
-        style={styles.topGradient}
-        pointerEvents="none"
-      />
+      <Animated.View style={{ opacity: uiOpacity }} pointerEvents={flyingAway ? 'none' : 'auto'}>
+        <LinearGradient
+          colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.15)', 'transparent']}
+          style={styles.topGradient}
+          pointerEvents="none"
+        />
+      </Animated.View>
 
       {/* ── Bottom gradient fade ── */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.5)']}
-        style={styles.bottomGradient}
-        pointerEvents="none"
-      />
+      <Animated.View style={{ opacity: uiOpacity }} pointerEvents={flyingAway ? 'none' : 'auto'}>
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.5)']}
+          style={styles.bottomGradient}
+          pointerEvents="none"
+        />
+      </Animated.View>
 
       {/* ── Top Bar: Retake & Keep ── */}
-      <View style={styles.topBar}>
+      <Animated.View style={[styles.topBar, { opacity: uiOpacity }]} pointerEvents={flyingAway ? 'none' : 'auto'}>
         <TouchableOpacity style={styles.topBtn} onPress={handleRetake} activeOpacity={0.7}>
           <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
@@ -103,17 +170,17 @@ export default function PreviewScreen({ route, navigation }) {
         <TouchableOpacity style={styles.topBtn} onPress={handleKeep} activeOpacity={0.7}>
           <Ionicons name="checkmark" size={22} color="#fff" />
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       {/* ── Bottom: Rotate pill ── */}
-      <View style={styles.bottomBar}>
+      <Animated.View style={[styles.bottomBar, { opacity: uiOpacity }]} pointerEvents={flyingAway ? 'none' : 'auto'}>
         <TouchableOpacity style={styles.rotatePill} onPress={handleRotate} activeOpacity={0.7}>
           <Animated.View style={{ transform: [{ rotate: iconSpin }] }}>
             <Ionicons name="sync-outline" size={18} color="#fff" />
           </Animated.View>
           <Text style={styles.rotateText}>Rotate</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </View>
   );
 }
