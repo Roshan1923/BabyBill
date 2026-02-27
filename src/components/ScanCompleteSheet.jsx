@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = SCREEN_HEIGHT * 0.45;
 
 const DS = {
@@ -101,7 +101,6 @@ export default function ScanCompleteSheet({ scans = [], onViewProgress, onDismis
   }, []);
 
   const handleViewProgress = () => {
-    // Slide sheet down, then navigate
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: SHEET_HEIGHT + 50,
@@ -114,7 +113,7 @@ export default function ScanCompleteSheet({ scans = [], onViewProgress, onDismis
         useNativeDriver: true,
       }),
     ]).start(() => {
-      onViewProgress();
+      onViewProgress?.();
     });
   };
 
@@ -131,7 +130,7 @@ export default function ScanCompleteSheet({ scans = [], onViewProgress, onDismis
         useNativeDriver: true,
       }),
     ]).start(() => {
-      onDismiss();
+      onDismiss?.();
     });
   };
 
@@ -155,12 +154,7 @@ export default function ScanCompleteSheet({ scans = [], onViewProgress, onDismis
       </Animated.View>
 
       {/* Sheet */}
-      <Animated.View
-        style={[
-          styles.sheet,
-          { transform: [{ translateY: slideAnim }] },
-        ]}
-      >
+      <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
         {/* Drag handle */}
         <View style={styles.handleRow}>
           <View style={styles.handle} />
@@ -168,83 +162,71 @@ export default function ScanCompleteSheet({ scans = [], onViewProgress, onDismis
 
         {/* Content */}
         <View style={styles.content}>
-
-          {/* Success icon + count row */}
-          <View style={styles.headerRow}>
-            <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }] }]}>
-              <Ionicons name="checkmark" size={24} color={DS.positive} />
-            </Animated.View>
-
-            <View style={styles.headerText}>
-              <Animated.View style={{ transform: [{ scale: countAnim }] }}>
-                <Text style={styles.title}>
-                  {scanCount} {scanCount === 1 ? 'Receipt' : 'Receipts'} Captured
-                </Text>
+          {/* Top content group (so buttons can sit lower consistently) */}
+          <View>
+            {/* Success icon + count row */}
+            <View style={styles.headerRow}>
+              <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }] }]}>
+                <Ionicons name="checkmark" size={24} color={DS.positive} />
               </Animated.View>
-              <Text style={styles.subtitle}>Processing has started</Text>
+
+              <View style={styles.headerText}>
+                <Animated.View style={{ transform: [{ scale: countAnim }] }}>
+                  <Text style={styles.title}>
+                    {scanCount} {scanCount === 1 ? 'Receipt' : 'Receipts'} Captured
+                  </Text>
+                </Animated.View>
+                <Text style={styles.subtitle}>Processing has started</Text>
+              </View>
+            </View>
+
+            {/* Thumbnail preview row */}
+            <View style={styles.thumbRow}>
+              {previewScans.map((scan, i) => (
+                <Animated.View
+                  key={scan.id || i}
+                  style={[
+                    styles.thumbCard,
+                    {
+                      transform: [{ scale: thumbAnims[i] || new Animated.Value(1) }],
+                      zIndex: previewScans.length - i,
+                    },
+                  ]}
+                >
+                  <Image source={{ uri: 'file://' + scan.photoPath }} style={styles.thumbImage} />
+                  <View style={styles.thumbProcessingDot}>
+                    <View style={styles.pulseDot} />
+                  </View>
+                </Animated.View>
+              ))}
+
+              {scanCount > 4 && (
+                <View style={styles.thumbMore}>
+                  <Text style={styles.thumbMoreText}>+{scanCount - 4}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Processing hint */}
+            <View style={styles.hintRow}>
+              <Ionicons name="time-outline" size={14} color={DS.textSecondary} />
+              <Text style={styles.hintText}>Usually takes 10–20 seconds per receipt</Text>
             </View>
           </View>
 
-          {/* Thumbnail preview row */}
-          <View style={styles.thumbRow}>
-            {previewScans.map((scan, i) => (
-              <Animated.View
-                key={scan.id || i}
-                style={[
-                  styles.thumbCard,
-                  {
-                    transform: [
-                      { scale: thumbAnims[i] || new Animated.Value(1) },
-                    ],
-                    zIndex: previewScans.length - i,
-                  },
-                ]}
-              >
-                <Image
-                  source={{ uri: 'file://' + scan.photoPath }}
-                  style={styles.thumbImage}
-                />
-                <View style={styles.thumbProcessingDot}>
-                  <View style={styles.pulseDot} />
-                </View>
-              </Animated.View>
-            ))}
-            {scanCount > 4 && (
-              <View style={styles.thumbMore}>
-                <Text style={styles.thumbMoreText}>+{scanCount - 4}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Processing hint */}
-          <View style={styles.hintRow}>
-            <Ionicons name="time-outline" size={14} color={DS.textSecondary} />
-            <Text style={styles.hintText}>
-              Usually takes 10–20 seconds per receipt
-            </Text>
-          </View>
-
-          {/* Action buttons */}
+          {/* Action buttons (pinned to bottom via space-between) */}
           <Animated.View
             style={[
               styles.btnArea,
               { transform: [{ translateY: btnSlide }], opacity: btnOpacity },
             ]}
           >
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleViewProgress}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleViewProgress} activeOpacity={0.8}>
               <Text style={styles.primaryBtnText}>View Progress</Text>
               <Ionicons name="arrow-forward" size={18} color={DS.textInverse} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handleDismiss}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.secondaryBtn} onPress={handleDismiss} activeOpacity={0.7}>
               <Text style={styles.secondaryBtnText}>Dismiss</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -291,6 +273,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 8,
+    justifyContent: 'space-between', // ✅ pins buttons lower consistently
   },
 
   // Header
@@ -393,7 +376,7 @@ const styles = StyleSheet.create({
   // Buttons
   btnArea: {
     gap: 12,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 16,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16, // ✅ a touch more comfortable
   },
   primaryBtn: {
     flexDirection: 'row',
