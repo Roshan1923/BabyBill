@@ -258,7 +258,7 @@ export default function ScanScreen({ navigation }) {
   const handleViewProgress = () => {
     setShowCommit(false);
     clearScans();
-    navigation.navigate('Receipts', { tab: 'review' });
+    navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
   };
 
   const handleDismissSheet = () => {
