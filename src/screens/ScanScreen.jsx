@@ -21,7 +21,7 @@ import {
 } from '../utils/permissions';
 import { useScanQueue } from '../context/ScanContext';
 import PreviewOverlay from '../components/PreviewOverlay';
-import ScanConfirmOverlay from '../components/ScanConfirmOverlay';
+import CommitAcknowledgment from '../components/CommitAcknowledgment';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -69,9 +69,9 @@ export default function ScanScreen({ navigation }) {
   // Preview overlay state — photo shows as overlay on top of camera
   const [previewPhoto, setPreviewPhoto] = useState(null);
 
-  // Confirm overlay state — shows after tapping Done
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmCount, setConfirmCount] = useState(0);
+  // Commit acknowledgment animation state
+  const [showCommit, setShowCommit] = useState(false);
+  const [commitCount, setCommitCount] = useState(0);
 
   // Modals
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -243,26 +243,20 @@ export default function ScanScreen({ navigation }) {
     navigation.navigate('Home');
   };
 
-  // ─── Done — show confirm overlay ─────────────────────────────
+  // ─── Done — commit acknowledgment ───────────────────────────
   const handleDone = () => {
-    setConfirmCount(scans.length);
-    setShowConfirm(true);
-    // TODO: Start background processing here
+    setCommitCount(scans.length);
+    setShowCommit(true);
+    // TODO: Start background processing here (ProcessingContext)
   };
 
-  const handleConfirmViewProgress = () => {
-    setShowConfirm(false);
+  const handleCommitComplete = () => {
+    setShowCommit(false);
     clearScans();
-    // Navigate to Receipts screen → Pending tab
     navigation.navigate('Main', {
       screen: 'Receipts',
       params: { initialTab: 'pending' },
     });
-  };
-
-  const handleConfirmContinue = () => {
-    setShowConfirm(false);
-    // Stay on camera — scans still in queue for more captures
   };
 
   // ─── Thumbnail tap — gallery of captures ───────────────────
@@ -500,13 +494,12 @@ export default function ScanScreen({ navigation }) {
       )}
 
       {/* ══════════════════════════════════════════════════════
-          CONFIRM OVERLAY — shows after tapping Done
+          COMMIT ACKNOWLEDGMENT — auto-animates after tapping Done
          ══════════════════════════════════════════════════════ */}
-      {showConfirm && (
-        <ScanConfirmOverlay
-          scanCount={confirmCount}
-          onViewProgress={handleConfirmViewProgress}
-          onClose={handleConfirmContinue}
+      {showCommit && (
+        <CommitAcknowledgment
+          scanCount={commitCount}
+          onComplete={handleCommitComplete}
         />
       )}
 
