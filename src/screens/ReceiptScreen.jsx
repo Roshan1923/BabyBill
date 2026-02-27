@@ -1,3 +1,4 @@
+/* eslint-disable react-native/no-inline-styles */
 import React, { useState, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
@@ -7,6 +8,7 @@ import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
+import ToReviewReceipts from "../components/ToReviewReceipts";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -21,7 +23,6 @@ const DS = {
 };
 
 const TAGS = ["All", "Food", "Bills", "Gas", "Shopping", "Medical", "Other"];
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function getDateGroup(dateStr) {
@@ -156,78 +157,24 @@ function EmptyState({ hasFilters }) {
   );
 }
 
-function BottomNav({ activeTab, onTabPress }) {
-  const scanScale = useRef(new Animated.Value(1)).current;
-  const tabs = [
-    { key: "Home", icon: "home", label: "Home", lib: "feather" },
-    { key: "Receipts", icon: "file-text", label: "Receipts", lib: "feather" },
-    { key: "Scan", icon: "scan-outline", label: "", lib: "ionicons" },
-    { key: "AIChat", icon: "chatbubble-ellipses-outline", label: "AI Chat", lib: "ionicons" },
-    { key: "Settings", icon: "sliders", label: "Settings", lib: "feather" },
-  ];
-  return (
-    <View style={navStyles.bottomNav}>
-      {tabs.map((tab) => {
-        if (tab.key === "Scan") {
-          return (
-            <TouchableOpacity key={tab.key} style={navStyles.scanOuter} activeOpacity={1}
-              onPressIn={() => Animated.spring(scanScale, { toValue: 0.85, useNativeDriver: true, speed: 50 }).start()}
-              onPressOut={() => Animated.spring(scanScale, { toValue: 1, useNativeDriver: true, speed: 25, bounciness: 12 }).start()}
-              onPress={() => onTabPress(tab.key)}>
-              <Animated.View style={[navStyles.scanBtn, { transform: [{ scale: scanScale }] }]}>
-                <Ionicons name="scan-outline" size={24} color={DS.accentGold} />
-              </Animated.View>
-            </TouchableOpacity>
-          );
-        }
-        const active = activeTab === tab.key;
-        const IconComp = tab.lib === "ionicons" ? Ionicons : Icon;
-        return (
-          <TouchableOpacity key={tab.key} style={navStyles.navTab} onPress={() => onTabPress(tab.key)} activeOpacity={0.6}>
-            <IconComp name={tab.icon} size={20} color={active ? DS.brandNavy : DS.textSecondary} />
-            <Text style={[navStyles.navLabel, { color: active ? DS.brandNavy : DS.textSecondary }]}>{tab.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-const navStyles = StyleSheet.create({
-  bottomNav: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-around",
-    height: 80, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === "ios" ? 6 : 0, zIndex: 20,
-    backgroundColor: DS.bgSurface,
-    ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 1, shadowRadius: 20 },
-      android: { elevation: 8 },
-    }),
-  },
-  navTab: { alignItems: "center", justifyContent: "center", paddingVertical: 6, minWidth: 48 },
-  navLabel: { fontSize: 11, fontWeight: "400", marginTop: 3 },
-  scanOuter: { marginTop: -26 },
-  scanBtn: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: DS.brandNavy,
-    alignItems: "center", justifyContent: "center",
-    ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 16 },
-      android: { elevation: 8 },
-    }),
-  },
-});
-
 // ─── Main Screen ─────────────────────────────────────────────
 
-export default function ReceiptsScreen({ navigation }) {
-  const [activeTab] = useState("Receipts");
+export default function ReceiptsScreen({ navigation, route }) {
+  // Tab state: "saved" or "review"
+  // Auto-switch to review tab if navigated from camera with pending items
+  const initialTab = route?.params?.tab === 'review' ? 'review' : 'saved';
+  const [viewTab, setViewTab] = useState(initialTab);
+
   const [receipts, setReceipts] = useState([]);
   const [searchText, setSearchText] = useState("");
   const [activeTag, setActiveTag] = useState("All");
   const [dateRange, setDateRange] = useState("all");
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // TODO: Wire to ProcessingContext — for now mock data
+  const [reviewItems, setReviewItems] = useState([]);
+  const hasReviewItems = reviewItems.length > 0;
 
   const fetchReceipts = async () => {
     try {
@@ -239,7 +186,13 @@ export default function ReceiptsScreen({ navigation }) {
     finally { setLoading(false); }
   };
 
-  useFocusEffect(useCallback(() => { fetchReceipts(); }, []));
+  useFocusEffect(useCallback(() => {
+    fetchReceipts();
+    // Check if we should switch to review tab
+    if (route?.params?.tab === 'review') {
+      setViewTab('review');
+    }
+  }, [route?.params?.tab]));
 
   const filteredReceipts = useMemo(() => {
     return receipts.filter((r) => {
@@ -276,64 +229,114 @@ export default function ReceiptsScreen({ navigation }) {
     return <ReceiptRow item={item.data} onPress={() => navigation.navigate("Detail", { receipt: item.data })} />;
   };
 
+  const handleReviewPress = (item) => {
+    // TODO: Navigate to review/edit screen
+    // navigation.navigate('ReviewEdit', { receiptId: item.id });
+  };
+
+  const handleRetry = (item) => {
+    // TODO: Retry processing
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
+      {/* ── Header ── */}
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Receipts</Text>
-        
       </View>
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Icon name="search" size={16} color={DS.textSecondary} />
-          <TextInput style={styles.searchInput} placeholder="Search by store name..."
-            placeholderTextColor={DS.textSecondary} value={searchText} onChangeText={setSearchText} returnKeyType="search" />
-          {searchText !== "" && (
-            <TouchableOpacity onPress={() => setSearchText("")} activeOpacity={0.6}>
-              <Icon name="x" size={16} color={DS.textSecondary} />
-            </TouchableOpacity>
-          )}
+      {/* ── Tab Pills: Saved | To Review ── */}
+      <View style={styles.tabRow}>
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tabPill, viewTab === 'saved' && styles.tabPillActive]}
+            onPress={() => setViewTab('saved')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, viewTab === 'saved' && styles.tabTextActive]}>
+              Saved
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabPill, viewTab === 'review' && styles.tabPillActive]}
+            onPress={() => setViewTab('review')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, viewTab === 'review' && styles.tabTextActive]}>
+              To Review
+            </Text>
+            {/* Gold dot indicator */}
+            {hasReviewItems && viewTab !== 'review' && (
+              <View style={styles.dotIndicator} />
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.filterRow}>
-        <FlatList horizontal showsHorizontalScrollIndicator={false} data={TAGS} keyExtractor={(item) => item}
-          contentContainerStyle={styles.tagsContainer}
-          renderItem={({ item }) => {
-            const active = activeTag === item;
-            return (
-              <TouchableOpacity onPress={() => setActiveTag(item)}
-                style={[styles.tagPill, active && styles.tagPillActive]} activeOpacity={0.7}>
-                <Text style={[styles.tagText, active && styles.tagTextActive]}>{item}</Text>
+      {/* ── Tab Content ── */}
+      {viewTab === 'review' ? (
+        /* ── To Review Tab ── */
+        <ToReviewReceipts
+          items={reviewItems}
+          onPressItem={handleReviewPress}
+          onRetry={handleRetry}
+        />
+      ) : (
+        /* ── Saved Tab (existing receipts UI) ── */
+        <>
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Icon name="search" size={16} color={DS.textSecondary} />
+              <TextInput style={styles.searchInput} placeholder="Search by store name..."
+                placeholderTextColor={DS.textSecondary} value={searchText} onChangeText={setSearchText} returnKeyType="search" />
+              {searchText !== "" && (
+                <TouchableOpacity onPress={() => setSearchText("")} activeOpacity={0.6}>
+                  <Icon name="x" size={16} color={DS.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.filterRow}>
+            <FlatList horizontal showsHorizontalScrollIndicator={false} data={TAGS} keyExtractor={(item) => item}
+              contentContainerStyle={styles.tagsContainer}
+              renderItem={({ item }) => {
+                const active = activeTag === item;
+                return (
+                  <TouchableOpacity onPress={() => setActiveTag(item)}
+                    style={[styles.tagPill, active && styles.tagPillActive]} activeOpacity={0.7}>
+                    <Text style={[styles.tagText, active && styles.tagTextActive]}>{item}</Text>
+                  </TouchableOpacity>
+                );
+              }} />
+          </View>
+
+          <View style={styles.dateRangeRow}>
+            <TouchableOpacity style={styles.dateRangeBtn} onPress={() => setDateModalVisible(true)} activeOpacity={0.7}>
+              <Icon name="calendar" size={14} color={DS.brandNavy} />
+              <Text style={styles.dateRangeText}>{dateRangeLabel}</Text>
+              <Icon name="chevron-down" size={14} color={DS.textSecondary} />
+            </TouchableOpacity>
+            {hasFilters && (
+              <TouchableOpacity style={styles.clearBtn} onPress={() => { setSearchText(""); setActiveTag("All"); setDateRange("all"); }} activeOpacity={0.7}>
+                <Text style={styles.clearBtnText}>Clear all</Text>
               </TouchableOpacity>
-            );
-          }} />
-      </View>
+            )}
+          </View>
 
-      <View style={styles.dateRangeRow}>
-        <TouchableOpacity style={styles.dateRangeBtn} onPress={() => setDateModalVisible(true)} activeOpacity={0.7}>
-          <Icon name="calendar" size={14} color={DS.brandNavy} />
-          <Text style={styles.dateRangeText}>{dateRangeLabel}</Text>
-          <Icon name="chevron-down" size={14} color={DS.textSecondary} />
-        </TouchableOpacity>
-        {hasFilters && (
-          <TouchableOpacity style={styles.clearBtn} onPress={() => { setSearchText(""); setActiveTag("All"); setDateRange("all"); }} activeOpacity={0.7}>
-            <Text style={styles.clearBtnText}>Clear all</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+          <FlatList data={sections} keyExtractor={(item) => item.id} renderItem={renderItem}
+            contentContainerStyle={[styles.listContent, sections.length === 0 && styles.listContentEmpty]}
+            showsVerticalScrollIndicator={false} ListEmptyComponent={<EmptyState hasFilters={hasFilters} />}
+            onRefresh={fetchReceipts} refreshing={loading} />
+        </>
+      )}
 
-      <FlatList data={sections} keyExtractor={(item) => item.id} renderItem={renderItem}
-        contentContainerStyle={[styles.listContent, sections.length === 0 && styles.listContentEmpty]}
-        showsVerticalScrollIndicator={false} ListEmptyComponent={<EmptyState hasFilters={hasFilters} />}
-        onRefresh={fetchReceipts} refreshing={loading} />
-
+      {/* ── Date Range Modal ── */}
       <DateRangeModal visible={dateModalVisible} onClose={() => setDateModalVisible(false)}
         selected={dateRange} onSelect={setDateRange} />
-
-      <BottomNav activeTab={activeTab} onTabPress={(tab) => { if (tab !== "Receipts") navigation.navigate(tab); }} />
     </SafeAreaView>
   );
 }
@@ -345,9 +348,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: DS.pagePad, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12, paddingBottom: 4,
   },
   pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3 },
-  headerRight: { alignItems: "flex-end" },
-  receiptCount: { fontSize: 12, fontWeight: "500", color: DS.textSecondary },
-  totalBadge: { fontSize: 16, fontWeight: "700", color: DS.brandNavy, marginTop: 1 },
+
+  // ── Tab Pills ──
+  tabRow: {
+    paddingHorizontal: DS.pagePad,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: DS.bgSurface2,
+    borderRadius: 12,
+    padding: 3,
+  },
+  tabPill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  tabPillActive: {
+    backgroundColor: DS.bgSurface,
+    ...Platform.select({
+      ios: {
+        shadowColor: DS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 6,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: DS.textSecondary,
+  },
+  tabTextActive: {
+    color: DS.textPrimary,
+  },
+  dotIndicator: {
+    position: 'absolute',
+    top: 6,
+    right: '25%',
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: DS.accentGold,
+  },
+
+  // ── Existing styles (unchanged) ──
   searchContainer: { paddingHorizontal: DS.pagePad, marginTop: 12 },
   searchBar: {
     flexDirection: "row", alignItems: "center", backgroundColor: DS.bgSurface, borderRadius: 14,
