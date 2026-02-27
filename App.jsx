@@ -17,6 +17,7 @@ import DetailScreen from './src/screens/DetailScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
 import ScanGalleryScreen from './src/screens/ScanGalleryScreen';
 import { ScanProvider } from './src/context/ScanContext';
+import { ProcessingProvider } from './src/context/ProcessingContext';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ProfileEditScreen from './src/screens/ProfileEditScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
@@ -85,43 +86,45 @@ const App = () => {
   return (
     <>
       <ScanProvider>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            {session ? (
-              <>
-                <Stack.Screen name="Main" component={TabNavigator} />
-                <Stack.Screen name="Detail" component={DetailScreen} />
-              
-                <Stack.Screen
-                  name="ManualEntry"
-                  component={ManualEntryScreen}
-                  options={{ animation: 'slide_from_right' }}
-                />
-                <Stack.Screen
-                name="ScanGallery"
-                component={ScanGalleryScreen}
-                options={{ animation: 'slide_from_left' }}
-                />
-              </>
-            ) : (
-              <>
-                <Stack.Screen
-                  name="Login"
-                  component={LoginScreen}
-                  options={{ animationTypeForReplace: 'pop' }}
-                />
-                <Stack.Screen name="Register">
-                  {(props) => (
-                    <RegisterScreen
-                      {...props}
-                      onRegistrationStart={handleRegistrationStart}
-                    />
-                  )}
-                </Stack.Screen>
-              </>
-            )}
-          </Stack.Navigator>
-        </NavigationContainer>
+      <ProcessingProvider>
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              {session ? (
+                <>
+                  <Stack.Screen name="Main" component={TabNavigator} />
+                  <Stack.Screen name="Detail" component={DetailScreen} />
+                
+                  <Stack.Screen
+                    name="ManualEntry"
+                    component={ManualEntryScreen}
+                    options={{ animation: 'slide_from_right' }}
+                  />
+                  <Stack.Screen
+                  name="ScanGallery"
+                  component={ScanGalleryScreen}
+                  options={{ animation: 'slide_from_left' }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Stack.Screen
+                    name="Login"
+                    component={LoginScreen}
+                    options={{ animationTypeForReplace: 'pop' }}
+                  />
+                  <Stack.Screen name="Register">
+                    {(props) => (
+                      <RegisterScreen
+                        {...props}
+                        onRegistrationStart={handleRegistrationStart}
+                      />
+                    )}
+                  </Stack.Screen>
+                </>
+              )}
+            </Stack.Navigator>
+          </NavigationContainer>
+          </ProcessingProvider>
       </ScanProvider>
       {/* Simple toast message */}
       {showToast && (

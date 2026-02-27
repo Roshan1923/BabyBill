@@ -9,6 +9,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
 import ToReviewReceipts from "../components/ToReviewReceipts";
+import { useProcessing } from "../context/ProcessingContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -236,8 +237,9 @@ export default function ReceiptsScreen({ navigation, route }) {
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // TODO: Wire to ProcessingContext — for now mock data
-  const [reviewItems, setReviewItems] = useState([]);
+  // Processing queue from context
+  const { jobs, getReviewItems, getPendingCount, retryJob, markReviewed } = useProcessing();
+  const reviewItems = jobs.filter((j) => j.status !== 'reviewed');
   const hasReviewItems = reviewItems.length > 0;
 
   const fetchReceipts = async () => {
@@ -294,12 +296,15 @@ export default function ReceiptsScreen({ navigation, route }) {
   };
 
   const handleReviewPress = (item) => {
-    // TODO: Navigate to review/edit screen
-    // navigation.navigate('ReviewEdit', { receiptId: item.id });
+    // Navigate to detail view with the processed receipt data
+    if (item.receiptData) {
+      markReviewed(item.id);
+      navigation.navigate("Detail", { receipt: item.receiptData });
+    }
   };
 
   const handleRetry = (item) => {
-    // TODO: Retry processing
+    retryJob(item.id);
   };
 
   return (

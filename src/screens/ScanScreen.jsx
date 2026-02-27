@@ -20,6 +20,7 @@ import {
   openAppSettings,
 } from '../utils/permissions';
 import { useScanQueue } from '../context/ScanContext';
+import { useProcessing } from '../context/ProcessingContext';
 import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
 
@@ -58,6 +59,7 @@ export default function ScanScreen({ navigation }) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
   const { scans, addScan, clearScans } = useScanQueue();
+  const { processBatch } = useProcessing();
 
   const hasScans = scans.length > 0;
 
@@ -243,26 +245,26 @@ export default function ScanScreen({ navigation }) {
     navigation.navigate('Home');
   };
 
-  // ─── Done — show completion sheet ───────────────────────────
+  // ─── Done — show completion sheet & start processing ────────
   const handleDone = () => {
-    setCommittedScans([...scans]); // Snapshot before clearing
+    const batch = [...scans]; // Snapshot before clearing
+    setCommittedScans(batch);
     setShowCommit(true);
-    // TODO: Start background processing here (ProcessingContext)
+
+    // Start background processing immediately
+    processBatch(batch);
   };
 
   const handleViewProgress = () => {
     setShowCommit(false);
     clearScans();
-    navigation.navigate('Main', {
-      screen: 'Receipts',
-      params: { initialTab: 'pending' },
-    });
+    navigation.navigate('Receipts', { tab: 'review' });
   };
 
   const handleDismissSheet = () => {
     setShowCommit(false);
     clearScans();
-    navigation.navigate('Home');
+    // Stay on camera — user wants to scan more
   };
 
   // ─── Thumbnail tap — gallery of captures ───────────────────
