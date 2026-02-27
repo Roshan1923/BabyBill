@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { supabase } from '../config/supabase';
 import { API_URL } from '../config/api';
+import { useNotifications } from './NotificationContext';
 
 const ProcessingContext = createContext();
 
@@ -16,7 +17,7 @@ const STATUS = {
 export function ProcessingProvider({ children }) {
   const [jobs, setJobs] = useState([]);
   const jobsRef = useRef([]);
-
+  const { addNotification } = useNotifications();
   // Keep ref in sync for use inside async callbacks
   const updateJobs = useCallback((updater) => {
     setJobs((prev) => {
@@ -99,6 +100,7 @@ export function ProcessingProvider({ children }) {
       const result = await response.json();
 
       if (response.ok && result.success) {
+        const store = result.receipt?.store_name || 'Receipt';
         // Success — update with receipt data
         updateJobs((prev) =>
           prev.map((j) =>
@@ -106,13 +108,20 @@ export function ProcessingProvider({ children }) {
               ? {
                   ...j,
                   status: STATUS.READY,
-                  storeName: result.receipt?.store_name || 'Receipt',
+                  storeName: store,
                   receiptData: result.receipt,
                   error: null,
                 }
               : j
           )
         );
+        // Notify
+        addNotification({
+          type: 'receipt_ready',
+          title: 'Receipt Ready',
+          message: `${store} — $${result.receipt?.total_amount || '0.00'} is ready to review.`,
+          data: { jobId: job.id, receipt: result.receipt },
+        });
       } else if (result.duplicate) {
         // Duplicate detected — mark as failed with clear message
         const store = result.receipt_data?.store_name || 'this store';
@@ -132,6 +141,12 @@ export function ProcessingProvider({ children }) {
               : j
           )
         );
+        addNotification({
+          type: 'duplicate',
+          title: 'Duplicate Detected',
+          message: `A receipt from ${store} for $${total} already exists.`,
+          data: { jobId: job.id },
+        });
       } else {
         // Backend returned error
         updateJobs((prev) =>
@@ -145,6 +160,12 @@ export function ProcessingProvider({ children }) {
               : j
           )
         );
+        addNotification({
+          type: 'receipt_failed',
+          title: 'Processing Failed',
+          message: result.error || 'A receipt failed to process. Tap to retry.',
+          data: { jobId: job.id },
+        });
       }
     } catch (error) {
       // Network or other error

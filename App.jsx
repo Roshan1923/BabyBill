@@ -24,6 +24,8 @@ import NotificationScreen from './src/screens/NotificationScreen';
 import CurrencyScreen from './src/screens/CurrencyScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
+import { NotificationProvider } from './src/context/NotificationContext';
+import NotificationScreen from './src/screens/NotificationScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -87,50 +89,53 @@ const App = () => {
   return (
     <>
       <ScanProvider>
-      <ProcessingProvider>
-          <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              {session ? (
-                <>
-                  <Stack.Screen name="Main" component={TabNavigator} />
-                  <Stack.Screen name="Detail" component={DetailScreen} />
-                
-                  <Stack.Screen
-                    name="ManualEntry"
-                    component={ManualEntryScreen}
-                    options={{ animation: 'slide_from_right' }}
-                  />
-                  <Stack.Screen 
-                  name="ReviewReceipt" 
-                  component={ReviewReceiptScreen} 
-                  options={{ headerShown: false }} 
-                  />
-                  <Stack.Screen
-                  name="ScanGallery"
-                  component={ScanGalleryScreen}
-                  options={{ animation: 'slide_from_left' }}
-                  />
-                </>
-              ) : (
-                <>
-                  <Stack.Screen
-                    name="Login"
-                    component={LoginScreen}
-                    options={{ animationTypeForReplace: 'pop' }}
-                  />
-                  <Stack.Screen name="Register">
-                    {(props) => (
-                      <RegisterScreen
-                        {...props}
-                        onRegistrationStart={handleRegistrationStart}
+        <NotificationProvider>
+          <ProcessingProvider>
+              <NavigationContainer>
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                  {session ? (
+                    <>
+                      <Stack.Screen name="Main" component={TabNavigator} />
+                      <Stack.Screen name="Detail" component={DetailScreen} />
+                    
+                      <Stack.Screen
+                        name="ManualEntry"
+                        component={ManualEntryScreen}
+                        options={{ animation: 'slide_from_right' }}
                       />
-                    )}
-                  </Stack.Screen>
-                </>
-              )}
-            </Stack.Navigator>
-          </NavigationContainer>
+                      <Stack.Screen 
+                      name="ReviewReceipt" 
+                      component={ReviewReceiptScreen} 
+                      options={{ headerShown: false }} 
+                      />
+                      <Stack.Screen
+                      name="ScanGallery"
+                      component={ScanGalleryScreen}
+                      options={{ animation: 'slide_from_left' }}
+                      />
+                      <Stack.Screen name="Notifications" component={NotificationScreen} />
+                    </>
+                  ) : (
+                    <>
+                      <Stack.Screen
+                        name="Login"
+                        component={LoginScreen}
+                        options={{ animationTypeForReplace: 'pop' }}
+                      />
+                      <Stack.Screen name="Register">
+                        {(props) => (
+                          <RegisterScreen
+                            {...props}
+                            onRegistrationStart={handleRegistrationStart}
+                          />
+                        )}
+                      </Stack.Screen>
+                    </>
+                  )}
+                </Stack.Navigator>
+            </NavigationContainer>
           </ProcessingProvider>
+        </NotificationProvider>
       </ScanProvider>
       {/* Simple toast message */}
       {showToast && (
