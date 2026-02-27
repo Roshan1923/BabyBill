@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
-import Icon from 'react-native-vector-icons/FontAwesome';
+import Icon from 'react-native-vector-icons/Feather';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import {
   View,
   Text,
@@ -11,9 +12,34 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
+  Animated,
+  StatusBar,
+  SafeAreaView,
+  Modal,
 } from 'react-native';
 import { supabase } from '../config/supabase';
+
+GoogleSignin.configure({
+  webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+});
+
+// ─── Design System ───────────────────────────────────────────
+const DS = {
+  bgPage:        "#FAF8F4",
+  bgSurface:     "#FFFEFB",
+  bgSurface2:    "#F5F2EC",
+  brandNavy:     "#1A3A6B",
+  brandBlue:     "#2563C8",
+  accentGold:    "#E8A020",
+  accentGoldSub: "#FEF3DC",
+  textPrimary:   "#1C1610",
+  textSecondary: "#8A7E72",
+  textInverse:   "#FFFEFB",
+  positive:      "#2A8C5C",
+  negative:      "#C8402A",
+  border:        "#EDE8E0",
+  shadow:        "rgba(26,58,107,0.10)",
+};
 
 // Configure Google Sign-In with your Web Client ID
 // Configure Google Sign-In with your Web Client ID
@@ -27,26 +53,49 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Animations
+  const loginScale = useRef(new Animated.Value(1)).current;
+  const googleScale = useRef(new Animated.Value(1)).current;
+  const appleScale = useRef(new Animated.Value(1)).current;
+
+  const animPress = (anim) => Animated.spring(anim, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
+  const animRelease = (anim) => Animated.spring(anim, { toValue: 1, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
+
+  // ─── Custom Modal State ──────────────────────────────────────
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalIcon, setModalIcon] = useState('alert-circle');
+  const [modalIconColor, setModalIconColor] = useState(DS.negative);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+
+  const showModal = (icon, iconColor, title, message) => {
+    setModalIcon(icon);
+    setModalIconColor(iconColor);
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalVisible(true);
+  };
+
+  // ─── Auth Handlers ───────────────────────────────────────────
 
   const handleLogin = async () => {
     if (!emailOrUsername.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your email/username and password.');
+      showModal('alert-circle', DS.accentGold, 'Missing Fields', 'Please enter your email/username and password.');
       return;
     }
 
     setLoading(true);
-
     try {
       let email = emailOrUsername.trim();
 
-      // If user entered a username (no @), look up their email
       if (!email.includes('@')) {
         const { data: foundEmail, error: lookupError } = await supabase.rpc('get_email_by_username', {
           lookup_username: email.toLowerCase(),
         });
-
         if (lookupError || !foundEmail) {
-          Alert.alert('Login Failed', 'Username not found. Please check and try again.');
+          showModal('alert-circle', DS.negative, 'Login Failed', 'Username not found. Please check and try again.');
           setLoading(false);
           return;
         }
@@ -59,11 +108,10 @@ const LoginScreen = ({ navigation }) => {
       });
 
       if (error) {
-        Alert.alert('Login Failed', error.message);
+        showModal('alert-circle', DS.negative, 'Login Failed', error.message);
       }
-      // If success, App.jsx auth listener will automatically navigate to Main
     } catch (err) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      showModal('alert-circle', DS.negative, 'Error', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -71,14 +119,14 @@ const LoginScreen = ({ navigation }) => {
 
   const handleGoogleSignIn = async () => {
     try {
-      setLoading(true);
+      setGoogleLoading(true);
       await GoogleSignin.hasPlayServices();
       const signInResult = await GoogleSignin.signIn();
 
       const idToken = signInResult?.data?.idToken;
       if (!idToken) {
-        Alert.alert('Error', 'Failed to get Google ID token.');
-        setLoading(false);
+        showModal('alert-circle', DS.negative, 'Error', 'Failed to get Google ID token.');
+        setGoogleLoading(false);
         return;
       }
 
@@ -88,32 +136,28 @@ const LoginScreen = ({ navigation }) => {
       });
 
       if (error) {
-        Alert.alert('Google Sign-In Failed', error.message);
+        showModal('alert-circle', DS.negative, 'Google Sign-In Failed', error.message);
       }
-      // Success → App.jsx auth listener navigates to Main automatically
     } catch (error) {
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        // User cancelled — do nothing
+        // User cancelled
       } else if (error.code === statusCodes.IN_PROGRESS) {
-        // Already signing in
+        // Already in progress
       } else {
-        Alert.alert('Error', error.message || 'Google Sign-In failed.');
+        showModal('alert-circle', DS.negative, 'Error', error.message || 'Google Sign-In failed.');
       }
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
   const handleAppleSignIn = async () => {
-    Alert.alert('Coming Soon', 'Apple Sign-In will be set up in Phase 7.5');
+    showModal('information-circle', DS.brandBlue, 'Coming Soon', 'Apple Sign-In will be available in a future update.');
   };
 
   const handleForgotPassword = async () => {
     if (!emailOrUsername.trim() || !emailOrUsername.includes('@')) {
-      Alert.alert(
-        'Enter Your Email',
-        'Please type your email address in the field above, then tap Forgot Password again.'
-      );
+      showModal('mail-outline', DS.accentGold, 'Enter Your Email', 'Please type your email address in the field above, then tap Forgot Password again.');
       return;
     }
 
@@ -121,281 +165,425 @@ const LoginScreen = ({ navigation }) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(emailOrUsername.trim());
       if (error) {
-        Alert.alert('Error', error.message);
+        showModal('alert-circle', DS.negative, 'Error', error.message);
       } else {
-        Alert.alert('Check Your Email', 'A password reset link has been sent to your email.');
+        showModal('checkmark-circle', DS.positive, 'Check Your Email', 'A password reset link has been sent to your email.');
       }
     } catch (err) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      showModal('alert-circle', DS.negative, 'Error', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // ─── Render ──────────────────────────────────────────────────
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Logo / App Name */}
-        <View style={styles.headerSection}>
-          <Text style={styles.appName}>BillBrain</Text>
-          <Text style={styles.tagline}>All Your Receipts. One Smart Brain.</Text>
-        </View>
-
-        {/* Login Form */}
-        <View style={styles.formSection}>
-          <Text style={styles.formTitle}>Welcome Back</Text>
-
-          {/* Email / Username Input */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Email or Username</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter email or username"
-              placeholderTextColor="#555"
-              value={emailOrUsername}
-              onChangeText={setEmailOrUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+        >
+          {/* ── Brand Header ── */}
+          <View style={styles.brandSection}>
+            <View style={styles.logoCircle}>
+              <Ionicons name="receipt-outline" size={32} color={DS.textInverse} />
+            </View>
+            <Text style={styles.appName}>BillBrain</Text>
+            <Text style={styles.tagline}>All Your Receipts. One Smart Brain.</Text>
           </View>
 
-          {/* Password Input */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter password"
-                placeholderTextColor="#555"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-              />
+          {/* ── Login Card ── */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Welcome Back</Text>
+            <Text style={styles.cardSubtitle}>Sign in to your account</Text>
+
+            {/* Email / Username */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>EMAIL OR USERNAME</Text>
+              <View style={styles.inputRow}>
+                <Icon name="user" size={16} color={DS.textSecondary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter email or username"
+                  placeholderTextColor={DS.textSecondary}
+                  value={emailOrUsername}
+                  onChangeText={setEmailOrUsername}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                />
+              </View>
+            </View>
+
+            {/* Password */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>PASSWORD</Text>
+              <View style={styles.inputRow}>
+                <Icon name="lock" size={16} color={DS.textSecondary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter password"
+                  placeholderTextColor={DS.textSecondary}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} activeOpacity={0.6}>
+                  <Icon name={showPassword ? "eye-off" : "eye"} size={18} color={DS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Forgot Password */}
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn} activeOpacity={0.6}>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            {/* Login Button */}
+            <TouchableOpacity
+              activeOpacity={1}
+              onPressIn={() => animPress(loginScale)}
+              onPressOut={() => animRelease(loginScale)}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <Animated.View style={[styles.primaryBtn, { transform: [{ scale: loginScale }] }, loading && { opacity: 0.6 }]}>
+                {loading ? (
+                  <ActivityIndicator color={DS.textInverse} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Log In</Text>
+                )}
+              </Animated.View>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or continue with</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Social Buttons */}
+            <View style={styles.socialRow}>
               <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
+                activeOpacity={1}
+                onPressIn={() => animPress(googleScale)}
+                onPressOut={() => animRelease(googleScale)}
+                onPress={handleGoogleSignIn}
+                disabled={googleLoading}
+                style={{ flex: 1 }}
               >
-                <Text style={styles.eyeText}>{showPassword ? 'Hide' : 'Show'}</Text>
+                <Animated.View style={[styles.socialBtn, { transform: [{ scale: googleScale }] }]}>
+                  {googleLoading ? (
+                    <ActivityIndicator size="small" color={DS.textPrimary} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-google" size={18} color="#DB4437" />
+                      <Text style={styles.socialBtnText}>Google</Text>
+                    </>
+                  )}
+                </Animated.View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={1}
+                onPressIn={() => animPress(appleScale)}
+                onPressOut={() => animRelease(appleScale)}
+                onPress={handleAppleSignIn}
+                style={{ flex: 1 }}
+              >
+                <Animated.View style={[styles.socialBtn, { transform: [{ scale: appleScale }] }]}>
+                  <Ionicons name="logo-apple" size={18} color={DS.textPrimary} />
+                  <Text style={styles.socialBtnText}>Apple</Text>
+                </Animated.View>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Forgot Password */}
-          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotButton}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          {/* Login Button */}
-          <TouchableOpacity
-            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginButtonText}>Log In</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social Login Buttons */}
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton} onPress={handleGoogleSignIn}>
-              <Icon name="google" size={20} color="#DB4437" />
-              <Text style={styles.socialButtonText}>Google</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.socialButton} onPress={handleAppleSignIn}>
-              <Icon name="apple" size={20} color="#fff" />
-              <Text style={styles.socialButtonText}>Apple</Text>
+          {/* ── Register Link ── */}
+          <View style={styles.bottomLink}>
+            <Text style={styles.bottomLinkText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Register')} activeOpacity={0.6}>
+              <Text style={styles.bottomLinkAction}>Sign Up</Text>
             </TouchableOpacity>
           </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-          {/* Register Link */}
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerLink}>Sign Up</Text>
+      {/* ── Custom Modal ── */}
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={[styles.modalIconCircle, { backgroundColor: modalIconColor + "14" }]}>
+              <Ionicons name={modalIcon} size={24} color={modalIconColor} />
+            </View>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalMessage}>{modalMessage}</Text>
+            <TouchableOpacity
+              style={styles.modalBtn}
+              onPress={() => setModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.modalBtnText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: DS.bgPage,
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 40,
   },
-  headerSection: {
+
+  // Brand
+  brandSection: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
   },
-  appName: {
-    fontSize: 42,
-    fontWeight: '800',
-    color: '#4a93f7',
-    letterSpacing: 1,
-  },
-  tagline: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginTop: 8,
-  },
-  formSection: {
-    width: '100%',
-  },
-  formTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 24,
-  },
-  inputWrapper: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9ca3af',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#fff',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#fff',
-  },
-  eyeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  eyeText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-    marginTop: 4,
-  },
-  forgotText: {
-    color: '#3b82f6',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loginButton: {
-    backgroundColor: '#3b82f6',
-    borderRadius: 12,
-    paddingVertical: 16,
+  logoCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: DS.brandNavy,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 24 },
+      android: { elevation: 6 },
+    }),
   },
-  loginButtonDisabled: {
-    opacity: 0.6,
+  appName: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: DS.brandNavy,
+    letterSpacing: -0.5,
   },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
+  tagline: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: DS.textSecondary,
+    marginTop: 6,
+  },
+
+  // Card
+  card: {
+    backgroundColor: DS.bgSurface,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: DS.border,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 28 },
+      android: { elevation: 4 },
+    }),
+  },
+  cardTitle: {
+    fontSize: 22,
     fontWeight: '700',
+    color: DS.textPrimary,
+    letterSpacing: -0.2,
   },
-  dividerContainer: {
+  cardSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: DS.textSecondary,
+    marginTop: 4,
+    marginBottom: 24,
+  },
+
+  // Fields
+  fieldGroup: {
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: DS.textSecondary,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    backgroundColor: DS.bgSurface2,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    height: 54,
+    gap: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: DS.textPrimary,
+    padding: 0,
+  },
+
+  // Forgot
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+    marginTop: 2,
+  },
+  forgotText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: DS.brandBlue,
+  },
+
+  // Primary Button
+  primaryBtn: {
+    backgroundColor: DS.brandNavy,
+    borderRadius: 999,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 16 },
+      android: { elevation: 4 },
+    }),
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: DS.textInverse,
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#2a2a2a',
+    backgroundColor: DS.border,
   },
   dividerText: {
-    color: '#6b7280',
-    paddingHorizontal: 12,
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '500',
+    color: DS.textSecondary,
+    paddingHorizontal: 14,
   },
-  socialContainer: {
+
+  // Social
+  socialRow: {
     flexDirection: 'row',
     gap: 12,
   },
-  socialButton: {
-    flex: 1,
+  socialBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: DS.bgSurface2,
     gap: 8,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 8 },
+      android: { elevation: 1 },
+    }),
   },
-  socialIcon: {
-    fontSize: 18,
-    color: '#fff',
-    fontWeight: '700',
-  },
-  socialButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  socialBtnText: {
+    fontSize: 14,
     fontWeight: '600',
+    color: DS.textPrimary,
   },
-  registerContainer: {
+
+  // Bottom Link
+  bottomLink: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 28,
   },
-  registerText: {
-    color: '#6b7280',
-    fontSize: 15,
+  bottomLinkText: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: DS.textSecondary,
   },
-  registerLink: {
-    color: '#3b82f6',
-    fontSize: 15,
+  bottomLinkAction: {
+    fontSize: 14,
     fontWeight: '700',
+    color: DS.brandNavy,
+  },
+
+  // ── Custom Modal ──
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: 32,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: DS.bgSurface,
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 28 },
+      android: { elevation: 8 },
+    }),
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: DS.textPrimary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: DS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: DS.brandNavy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: DS.textInverse,
   },
 });
 
