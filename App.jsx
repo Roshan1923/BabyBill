@@ -89,11 +89,7 @@ const App = () => {
               <>
                 <Stack.Screen name="Main" component={TabNavigator} />
                 <Stack.Screen name="Detail" component={DetailScreen} />
-                <Stack.Screen
-                  name="Preview"
-                  component={PreviewScreen}
-                  options={{ animation: 'slide_from_right' }}
-                />
+              
                 <Stack.Screen
                   name="ManualEntry"
                   component={ManualEntryScreen}
