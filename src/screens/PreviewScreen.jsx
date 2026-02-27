@@ -9,6 +9,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  Easing,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -16,13 +17,16 @@ import { useScanQueue } from '../context/ScanContext';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Frosted overlay — matches ScanScreen
 const OVERLAY = {
   btnBg:      'rgba(15, 15, 15, 0.5)',
   btnBorder:  'rgba(255, 255, 255, 0.15)',
   pillBg:     'rgba(15, 15, 15, 0.55)',
   pillBorder: 'rgba(255, 255, 255, 0.12)',
 };
+
+// Thumbnail target position (bottom-left of camera screen)
+const THUMB_TARGET_X = 44 + 33;  // paddingHorizontal + half thumbnail width
+const THUMB_TARGET_Y = SCREEN_HEIGHT - (Platform.OS === 'ios' ? 120 : 100);
 
 export default function PreviewScreen({ route, navigation }) {
   const { photoPath } = route.params;
@@ -34,13 +38,10 @@ export default function PreviewScreen({ route, navigation }) {
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
 
-  // Fly animation values
-  const flyScale = useRef(new Animated.Value(1)).current;
-  const flyX = useRef(new Animated.Value(0)).current;
-  const flyY = useRef(new Animated.Value(0)).current;
-  const flyOpacity = useRef(new Animated.Value(1)).current;
-  const flyBorderRadius = useRef(new Animated.Value(0)).current;
+  // Fly animation
+  const flyProgress = useRef(new Animated.Value(0)).current;
   const uiOpacity = useRef(new Animated.Value(1)).current;
+  const bgOpacity = useRef(new Animated.Value(1)).current;
 
   const handleRotate = () => {
     if (flyingAway) return;
@@ -81,67 +82,89 @@ export default function PreviewScreen({ route, navigation }) {
     if (flyingAway) return;
     setFlyingAway(true);
 
-    // Target: bottom-left thumbnail position on camera screen
-    const targetX = -(SCREEN_WIDTH / 2) + 70;
-    const targetY = (SCREEN_HEIGHT / 2) - 120;
-
-    // Fade out UI elements immediately
+    // Fade UI immediately
     Animated.timing(uiOpacity, {
       toValue: 0,
-      duration: 150,
+      duration: 120,
       useNativeDriver: true,
     }).start();
 
-    // Fly the image to thumbnail position
-    Animated.parallel([
-      Animated.timing(flyScale, {
-        toValue: 0.12,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(flyX, {
-        toValue: targetX,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(flyY, {
-        toValue: targetY,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(flyOpacity, {
-        toValue: 0,
-        duration: 400,
-        delay: 250,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
+    // Brighten background (simulate camera appearing behind)
+    Animated.timing(bgOpacity, {
+      toValue: 0.3,
+      duration: 350,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+
+    // Animate the image: scale down + move to thumbnail corner
+    Animated.timing(flyProgress, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+    }).start(() => {
       addScan({ photoPath, rotation });
       navigation.goBack();
     });
   };
 
+  // Derived animation values from flyProgress (0 → 1)
+  const flyScale = flyProgress.interpolate({
+    inputRange: [0, 0.7, 1],
+    outputRange: [1, 0.25, 0.12],
+  });
+
+  const flyTranslateX = flyProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -(SCREEN_WIDTH / 2) + THUMB_TARGET_X],
+  });
+
+  const flyTranslateY = flyProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, THUMB_TARGET_Y - (SCREEN_HEIGHT / 2)],
+  });
+
+  // Add slight border radius effect by using a wrapper
+  const flyBorderRadius = flyProgress.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, 8, 16],
+  });
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
+      {/* ── Background that fades to simulate camera behind ── */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: '#000', opacity: bgOpacity },
+        ]}
+      />
+
       {/* ── Full bleed image with fly animation ── */}
-      <Animated.Image
-        source={{ uri: photoUri }}
+      <Animated.View
         style={[
           StyleSheet.absoluteFill,
           {
-            opacity: flyOpacity,
             transform: [
-              { translateX: flyX },
-              { translateY: flyY },
+              { translateX: flyTranslateX },
+              { translateY: flyTranslateY },
               { scale: flyScale },
-              { rotate: rotateInterpolate },
             ],
           },
         ]}
-        resizeMode="contain"
-      />
+      >
+        <Animated.Image
+          source={{ uri: photoUri }}
+          style={[
+            StyleSheet.absoluteFill,
+            { transform: [{ rotate: rotateInterpolate }] },
+          ]}
+          resizeMode="contain"
+        />
+      </Animated.View>
 
       {/* ── Top gradient fade ── */}
       <Animated.View style={{ opacity: uiOpacity }} pointerEvents={flyingAway ? 'none' : 'auto'}>
@@ -186,7 +209,7 @@ export default function PreviewScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#1a1a1a' },
 
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 140 },
   bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 160 },
