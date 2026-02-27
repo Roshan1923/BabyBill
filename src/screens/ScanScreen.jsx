@@ -21,7 +21,7 @@ import {
 } from '../utils/permissions';
 import { useScanQueue } from '../context/ScanContext';
 import PreviewOverlay from '../components/PreviewOverlay';
-import CommitAcknowledgment from '../components/CommitAcknowledgment';
+import ScanCompleteSheet from '../components/ScanCompleteSheet';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -71,7 +71,7 @@ export default function ScanScreen({ navigation }) {
 
   // Commit acknowledgment animation state
   const [showCommit, setShowCommit] = useState(false);
-  const [commitCount, setCommitCount] = useState(0);
+  const [committedScans, setCommittedScans] = useState([]);
 
   // Modals
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -243,20 +243,26 @@ export default function ScanScreen({ navigation }) {
     navigation.navigate('Home');
   };
 
-  // ─── Done — commit acknowledgment ───────────────────────────
+  // ─── Done — show completion sheet ───────────────────────────
   const handleDone = () => {
-    setCommitCount(scans.length);
+    setCommittedScans([...scans]); // Snapshot before clearing
     setShowCommit(true);
     // TODO: Start background processing here (ProcessingContext)
   };
 
-  const handleCommitComplete = () => {
+  const handleViewProgress = () => {
     setShowCommit(false);
     clearScans();
     navigation.navigate('Main', {
       screen: 'Receipts',
       params: { initialTab: 'pending' },
     });
+  };
+
+  const handleDismissSheet = () => {
+    setShowCommit(false);
+    clearScans();
+    navigation.navigate('Home');
   };
 
   // ─── Thumbnail tap — gallery of captures ───────────────────
@@ -494,12 +500,13 @@ export default function ScanScreen({ navigation }) {
       )}
 
       {/* ══════════════════════════════════════════════════════
-          COMMIT ACKNOWLEDGMENT — auto-animates after tapping Done
+          SCAN COMPLETE SHEET — bottom sheet after tapping Done
          ══════════════════════════════════════════════════════ */}
       {showCommit && (
-        <CommitAcknowledgment
-          scanCount={commitCount}
-          onComplete={handleCommitComplete}
+        <ScanCompleteSheet
+          scans={committedScans}
+          onViewProgress={handleViewProgress}
+          onDismiss={handleDismissSheet}
         />
       )}
 
