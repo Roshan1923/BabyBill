@@ -14,7 +14,6 @@ import { supabase } from './src/config/supabase';
 // Main app screens
 import TabNavigator from './src/navigation/TabNavigator';
 import DetailScreen from './src/screens/DetailScreen';
-import PreviewScreen from './src/screens/PreviewScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
 import ScanGalleryScreen from './src/screens/ScanGalleryScreen';
 import { ScanProvider } from './src/context/ScanContext';
