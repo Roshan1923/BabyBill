@@ -20,6 +20,7 @@ import ManualEntryScreen from './src/screens/ManualEntryScreen';
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import { ScanProvider } from './src/context/ScanContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -79,43 +80,44 @@ const App = () => {
 
   return (
     <>
-      <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {session ? (
-            <>
-              <Stack.Screen name="Main" component={TabNavigator} />
-              <Stack.Screen name="Detail" component={DetailScreen} />
-              <Stack.Screen
-                name="Preview"
-                component={PreviewScreen}
-                options={{ animation: 'slide_from_right' }}
-              />
-              <Stack.Screen
-                name="ManualEntry"
-                component={ManualEntryScreen}
-                options={{ animation: 'slide_from_right' }}
-              />
-            </>
-          ) : (
-            <>
-              <Stack.Screen
-                name="Login"
-                component={LoginScreen}
-                options={{ animationTypeForReplace: 'pop' }}
-              />
-              <Stack.Screen name="Register">
-                {(props) => (
-                  <RegisterScreen
-                    {...props}
-                    onRegistrationStart={handleRegistrationStart}
-                  />
-                )}
-              </Stack.Screen>
-            </>
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
-
+      <ScanProvider>
+        <NavigationContainer>
+          <Stack.Navigator screenOptions={{ headerShown: false }}>
+            {session ? (
+              <>
+                <Stack.Screen name="Main" component={TabNavigator} />
+                <Stack.Screen name="Detail" component={DetailScreen} />
+                <Stack.Screen
+                  name="Preview"
+                  component={PreviewScreen}
+                  options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                  name="ManualEntry"
+                  component={ManualEntryScreen}
+                  options={{ animation: 'slide_from_right' }}
+                />
+              </>
+            ) : (
+              <>
+                <Stack.Screen
+                  name="Login"
+                  component={LoginScreen}
+                  options={{ animationTypeForReplace: 'pop' }}
+                />
+                <Stack.Screen name="Register">
+                  {(props) => (
+                    <RegisterScreen
+                      {...props}
+                      onRegistrationStart={handleRegistrationStart}
+                    />
+                  )}
+                </Stack.Screen>
+              </>
+            )}
+          </Stack.Navigator>
+        </NavigationContainer>
+      </ScanProvider>
       {/* Simple toast message */}
       {showToast && (
         <Animated.View style={[styles.toast, { opacity: fadeAnim }]}>

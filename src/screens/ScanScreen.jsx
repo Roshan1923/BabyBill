@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Animated,
   Modal,
+  Image,
   Dimensions,
   Platform,
   StatusBar,
@@ -16,9 +17,9 @@ import { Camera, useCameraDevice, useCameraPermission } from 'react-native-visio
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {
   requestPermissionWithBlockedHandling,
-  checkPermission,
   openAppSettings,
 } from '../utils/permissions';
+import { useScanQueue } from '../context/ScanContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,7 +29,6 @@ const DS = {
   bgSurface:     '#FFFEFB',
   bgSurface2:    '#F5F2EC',
   brandNavy:     '#1A3A6B',
-  brandBlue:     '#2563C8',
   accentGold:    '#E8A020',
   accentGoldSub: '#FEF3DC',
   textPrimary:   '#1C1610',
@@ -49,37 +49,39 @@ const OVERLAY = {
   white80:    'rgba(255, 255, 255, 0.8)',
   white50:    'rgba(255, 255, 255, 0.5)',
   white30:    'rgba(255, 255, 255, 0.3)',
-  white15:    'rgba(255, 255, 255, 0.15)',
 };
 
 export default function ScanScreen({ navigation }) {
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
+  const { scans, clearScans } = useScanQueue();
 
-  const [flash, setFlash] = useState('auto');  // 'auto' | 'on' | 'off' — like native iOS
+  const hasScans = scans.length > 0;
+
+  const [flash, setFlash] = useState('off');
   const [zoom, setZoom] = useState(1);
   const [focusPoint, setFocusPoint] = useState(null);
   const [capturing, setCapturing] = useState(false);
 
-  // Modal states
+  // Modals
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorTitle, setErrorTitle] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [showSettingsBtn, setShowSettingsBtn] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
 
   // Animations
   const focusAnim = useRef(new Animated.Value(0)).current;
   const captureScale = useRef(new Animated.Value(1)).current;
-  const flashPulse = useRef(new Animated.Value(1)).current;
   const zoomIndicatorOpacity = useRef(new Animated.Value(0)).current;
+  const badgePulse = useRef(new Animated.Value(1)).current;
 
-  // Get best format
+  // Best format
   const format = useMemo(() => {
     if (!device) return null;
     const formats = device.formats ?? [];
     if (formats.length === 0) return null;
-
     const maxPhotoRes = Math.max(
       ...formats.map((f) => (f.photoWidth ?? 0) * (f.photoHeight ?? 0))
     );
@@ -95,12 +97,22 @@ export default function ScanScreen({ navigation }) {
   }, [device]);
 
   useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    }
+    if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  // Show error/permission modal helper
+  // Pulse the badge when scan count changes
+  useEffect(() => {
+    if (hasScans) {
+      badgePulse.setValue(1.3);
+      Animated.spring(badgePulse, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 20,
+        bounciness: 12,
+      }).start();
+    }
+  }, [scans.length]);
+
   const showError = useCallback((title, message, settingsBtn = false) => {
     setErrorTitle(title);
     setErrorMessage(message);
@@ -108,133 +120,83 @@ export default function ScanScreen({ navigation }) {
     setShowErrorModal(true);
   }, []);
 
-  // Tap to focus with animation
+  // ─── Tap to focus ──────────────────────────────────────────
   const handleTapToFocus = async (event) => {
-    if (cameraRef.current) {
-      try {
-        const x = event.nativeEvent.locationX;
-        const y = event.nativeEvent.locationY;
-        setFocusPoint({ x, y });
+    if (!cameraRef.current) return;
+    try {
+      const x = event.nativeEvent.locationX;
+      const y = event.nativeEvent.locationY;
+      setFocusPoint({ x, y });
 
-        focusAnim.setValue(0);
-        Animated.sequence([
-          Animated.spring(focusAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-            speed: 40,
-            bounciness: 8,
-          }),
-          Animated.delay(600),
-          Animated.timing(focusAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-        ]).start(() => setFocusPoint(null));
-
-        await cameraRef.current.focus({ x, y });
-      } catch (error) {
-        console.log('Focus error:', error);
-      }
-    }
-  };
-
-  // Capture with animation
-  const handleCapture = async () => {
-    if (cameraRef.current && !capturing) {
-      setCapturing(true);
-
-      // Capture button press animation
+      focusAnim.setValue(0);
       Animated.sequence([
-        Animated.timing(captureScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
-        Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 10 }),
-      ]).start();
+        Animated.spring(focusAnim, { toValue: 1, useNativeDriver: true, speed: 40, bounciness: 8 }),
+        Animated.delay(600),
+        Animated.timing(focusAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start(() => setFocusPoint(null));
 
-      try {
-        const photo = await cameraRef.current.takePhoto({
-          qualityPrioritization: 'quality',
-          flash: flash,
-          enableShutterSound: true,
-          enableAutoRedEyeReduction: true,
-          enableAutoStabilization: true,
-        });
-        console.log('Photo captured:', photo.width, 'x', photo.height);
-        navigation.navigate('Preview', { photoPath: photo.path });
-      } catch (error) {
-        showError('Capture Failed', 'Something went wrong while taking the photo. Please try again.');
-        console.log(error);
-      } finally {
-        setCapturing(false);
-      }
+      await cameraRef.current.focus({ x, y });
+    } catch (e) {
+      console.log('Focus error:', e);
     }
   };
 
-  // Flash toggle: cycles auto → on → off (like native iOS camera)
-  const toggleFlash = () => {
-    setFlash((current) => {
-      if (current === 'auto') return 'on';
-      if (current === 'on') return 'off';
-      return 'auto';
-    });
+  // ─── Capture ───────────────────────────────────────────────
+  const handleCapture = async () => {
+    if (!cameraRef.current || capturing) return;
+    setCapturing(true);
+
     Animated.sequence([
-      Animated.timing(flashPulse, { toValue: 1.2, duration: 100, useNativeDriver: true }),
-      Animated.spring(flashPulse, { toValue: 1, useNativeDriver: true, speed: 40 }),
+      Animated.timing(captureScale, { toValue: 0.85, duration: 80, useNativeDriver: true }),
+      Animated.spring(captureScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 10 }),
     ]).start();
-  };
 
-  // Flash icon based on state
-  const getFlashIcon = () => {
-    switch (flash) {
-      case 'auto': return 'flash-outline';
-      case 'on':   return 'flash';
-      case 'off':  return 'flash-off';
-      default:     return 'flash-outline';
+    try {
+      const photo = await cameraRef.current.takePhoto({
+        qualityPrioritization: 'quality',
+        flash: flash,
+        enableShutterSound: true,
+        enableAutoRedEyeReduction: true,
+        enableAutoStabilization: true,
+      });
+      navigation.navigate('Preview', { photoPath: photo.path });
+    } catch (error) {
+      showError('Capture Failed', 'Something went wrong while taking the photo. Please try again.');
+    } finally {
+      setCapturing(false);
     }
   };
 
-  const getFlashLabel = () => {
-    switch (flash) {
-      case 'auto': return 'A';
-      case 'on':   return '';
-      case 'off':  return '';
-      default:     return 'A';
-    }
+  // ─── Flash toggle ──────────────────────────────────────────
+  const toggleFlash = () => {
+    setFlash((c) => (c === 'off' ? 'on' : 'off'));
   };
 
-  // Zoom with indicator flash
+  // ─── Zoom ──────────────────────────────────────────────────
   const handleZoom = (level) => {
     setZoom(level);
     zoomIndicatorOpacity.setValue(1);
     Animated.timing(zoomIndicatorOpacity, {
-      toValue: 0,
-      duration: 1200,
-      delay: 400,
-      useNativeDriver: true,
+      toValue: 0, duration: 1200, delay: 400, useNativeDriver: true,
     }).start();
   };
 
+  // ─── Gallery (fresh state only) ────────────────────────────
   const handleGallery = async () => {
-    // Check photo library permission first
     const granted = await requestPermissionWithBlockedHandling(
       'photoLibrary',
       ({ title, message, showSettingsButton }) => {
         showError(title, message, showSettingsButton);
       }
     );
-
     if (!granted) return;
 
     launchImageLibrary(
-      {
-        mediaType: 'photo',
-        quality: 1,
-        maxWidth: 4000,
-        maxHeight: 4000,
-      },
+      { mediaType: 'photo', quality: 1, maxWidth: 4000, maxHeight: 4000 },
       (response) => {
         if (response.didCancel) return;
         if (response.errorCode) {
-          showError('Gallery Error', response.errorMessage || 'Failed to pick image from gallery.');
+          showError('Gallery Error', response.errorMessage || 'Failed to pick image.');
           return;
         }
         if (response.assets && response.assets[0]) {
@@ -246,14 +208,39 @@ export default function ScanScreen({ navigation }) {
     );
   };
 
-  const zoomLevels = [0.5, 1, 2, 3];
+  // ─── Close / Cancel ────────────────────────────────────────
+  const handleClose = () => {
+    if (hasScans) {
+      setShowDiscardModal(true);
+    } else {
+      navigation.navigate('Home');
+    }
+  };
 
-  // Focus indicator animation values
-  const focusScale = focusAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1.4, 1],
-  });
+  const handleDiscard = () => {
+    clearScans();
+    setShowDiscardModal(false);
+    navigation.navigate('Home');
+  };
+
+  // ─── Done — process all ────────────────────────────────────
+  const handleDone = () => {
+    // TODO: Navigate to Screen 4 (Processing)
+    // For now go home
+    navigation.navigate('Home');
+  };
+
+  // ─── Thumbnail tap — gallery of captures ───────────────────
+  const handleThumbnailTap = () => {
+    // TODO: Open gallery preview of all scans
+    // For now just a placeholder
+  };
+
+  // Focus animation values
+  const focusScale = focusAnim.interpolate({ inputRange: [0, 1], outputRange: [1.4, 1] });
   const focusOpacity = focusAnim;
+
+  const zoomLevels = [0.5, 1, 2, 3];
 
   // ─── Permission Screen ─────────────────────────────────────
   if (!hasPermission) {
@@ -272,11 +259,7 @@ export default function ScanScreen({ navigation }) {
             <Ionicons name="shield-checkmark-outline" size={18} color={DS.textInverse} />
             <Text style={styles.permissionBtnText}>Grant Permission</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.permissionBackBtn}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.6}
-          >
+          <TouchableOpacity style={styles.permissionBackBtn} onPress={() => navigation.goBack()} activeOpacity={0.6}>
             <Text style={styles.permissionBackText}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -294,9 +277,7 @@ export default function ScanScreen({ navigation }) {
             <Ionicons name="alert-circle-outline" size={36} color={DS.negative} />
           </View>
           <Text style={styles.permissionTitle}>No Camera Found</Text>
-          <Text style={styles.permissionSubtitle}>
-            We couldn't detect a camera on this device
-          </Text>
+          <Text style={styles.permissionSubtitle}>We couldn't detect a camera on this device</Text>
           <TouchableOpacity
             style={[styles.permissionBtn, { backgroundColor: DS.textSecondary }]}
             onPress={() => navigation.goBack()}
@@ -357,46 +338,16 @@ export default function ScanScreen({ navigation }) {
 
       {/* ── Top Bar ── */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.topBtn}
-          onPress={() => navigation.navigate('Home')}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={styles.topBtn} onPress={handleClose} activeOpacity={0.7}>
           <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
 
-        <View style={styles.topRight}>
-          {/* Flash state pill */}
-          <View style={[
-            styles.flashPill,
-            flash === 'off' && styles.flashPillOff,
-          ]}>
-            <TouchableOpacity
-              onPress={toggleFlash}
-              activeOpacity={0.7}
-              style={styles.flashPillInner}
-            >
-              <Animated.View style={{ transform: [{ scale: flashPulse }] }}>
-                <Ionicons
-                  name={getFlashIcon()}
-                  size={18}
-                  color={flash === 'off' ? OVERLAY.white50 : DS.accentGold}
-                />
-              </Animated.View>
-              {flash === 'auto' && (
-                <Text style={styles.flashAutoLabel}>A</Text>
-              )}
-              {flash !== 'auto' && (
-                <Text style={[
-                  styles.flashStateText,
-                  flash === 'off' && { color: OVERLAY.white50 },
-                ]}>
-                  {flash === 'on' ? 'On' : 'Off'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Done button — only in accumulation state */}
+        {hasScans && (
+          <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.7}>
+            <Ionicons name="checkmark" size={20} color={DS.accentGold} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Bottom Controls ── */}
@@ -423,10 +374,23 @@ export default function ScanScreen({ navigation }) {
 
         {/* Capture row */}
         <View style={styles.captureRow}>
-          {/* Gallery */}
-          <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
-            <Ionicons name="images" size={24} color="#fff" />
-          </TouchableOpacity>
+
+          {/* Left button — Gallery (fresh) or Thumbnail stack (accumulation) */}
+          {hasScans ? (
+            <TouchableOpacity style={styles.thumbnailBtn} onPress={handleThumbnailTap} activeOpacity={0.7}>
+              <Image
+                source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
+                style={styles.thumbnailImage}
+              />
+              <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
+                <Text style={styles.countBadgeText}>{scans.length}</Text>
+              </Animated.View>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
+              <Ionicons name="images" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
 
           {/* Capture button */}
           <TouchableOpacity
@@ -437,26 +401,59 @@ export default function ScanScreen({ navigation }) {
           >
             <Animated.View style={[styles.captureCircle, { transform: [{ scale: captureScale }] }]}>
               <View style={styles.captureInner}>
-                {capturing && (
-                  <View style={styles.capturingDot} />
-                )}
+                {capturing && <View style={styles.capturingDot} />}
               </View>
             </Animated.View>
           </TouchableOpacity>
 
-          {/* Manual entry */}
+          {/* Right button — Flash */}
           <TouchableOpacity
-            style={styles.sideBtn}
-            onPress={() => navigation.navigate('ManualEntry')}
+            style={[styles.sideBtn, flash === 'on' && styles.sideBtnFlashOn]}
+            onPress={toggleFlash}
             activeOpacity={0.7}
           >
-            <Ionicons name="pencil" size={22} color="#fff" />
+            <Ionicons
+              name={flash === 'on' ? 'flash' : 'flash-off'}
+              size={22}
+              color={flash === 'on' ? DS.accentGold : '#fff'}
+            />
           </TouchableOpacity>
         </View>
 
         {/* Safe area spacer */}
         <View style={{ height: Platform.OS === 'ios' ? 28 : 16 }} />
       </View>
+
+      {/* ─── Discard Modal ─── */}
+      <Modal visible={showDiscardModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconCircle}>
+              <Ionicons name="alert-circle" size={28} color={DS.negative} />
+            </View>
+            <Text style={styles.modalTitle}>Discard Scans?</Text>
+            <Text style={styles.modalMessage}>
+              You have {scans.length} unsaved scan{scans.length !== 1 ? 's' : ''}. They will be lost if you leave now.
+            </Text>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnSecondary]}
+                onPress={() => setShowDiscardModal(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalBtnSecondaryText}>Keep Scanning</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnDestructive]}
+                onPress={handleDiscard}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalBtnText}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ─── Error / Permission Modal ─── */}
       <Modal visible={showErrorModal} transparent animationType="fade">
@@ -477,18 +474,15 @@ export default function ScanScreen({ navigation }) {
             {showSettingsBtn ? (
               <View style={styles.modalBtnRow}>
                 <TouchableOpacity
-                  style={[styles.modalBtn, styles.modalBtnSecondary, { flex: 1 }]}
+                  style={[styles.modalBtn, styles.modalBtnSecondary]}
                   onPress={() => setShowErrorModal(false)}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.modalBtnSecondaryText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.modalBtn, { flex: 1 }]}
-                  onPress={() => {
-                    setShowErrorModal(false);
-                    openAppSettings();
-                  }}
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                  onPress={() => { setShowErrorModal(false); openAppSettings(); }}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="settings-outline" size={16} color={DS.textInverse} style={{ marginRight: 6 }} />
@@ -497,7 +491,7 @@ export default function ScanScreen({ navigation }) {
               </View>
             ) : (
               <TouchableOpacity
-                style={styles.modalBtn}
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
                 onPress={() => setShowErrorModal(false)}
                 activeOpacity={0.8}
               >
@@ -514,372 +508,171 @@ export default function ScanScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
-  // ─── Permission / No Camera Screens ──────────────────────
+  // ─── Permission / No Camera ──────────────────────────────
   permissionScreen: {
-    flex: 1,
-    backgroundColor: DS.bgPage,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+    flex: 1, backgroundColor: DS.bgPage, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
   },
   permissionCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: 24, padding: 32, alignItems: 'center', width: '100%',
+    borderWidth: 1, borderColor: DS.border,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 24 },
       android: { elevation: 4 },
     }),
   },
   permissionIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: DS.accentGoldSub,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+    width: 72, height: 72, borderRadius: 36, backgroundColor: DS.accentGoldSub,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  permissionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: DS.textPrimary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  permissionSubtitle: {
-    fontSize: 14,
-    color: DS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
+  permissionTitle: { fontSize: 20, fontWeight: '700', color: DS.textPrimary, marginBottom: 8, textAlign: 'center' },
+  permissionSubtitle: { fontSize: 14, color: DS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
   permissionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: DS.brandNavy,
-    height: 50,
-    borderRadius: 14,
-    paddingHorizontal: 24,
-    gap: 8,
-    width: '100%',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: DS.brandNavy, height: 50, borderRadius: 14, paddingHorizontal: 24, gap: 8, width: '100%',
   },
-  permissionBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: DS.textInverse,
-  },
-  permissionBackBtn: {
-    marginTop: 16,
-    paddingVertical: 8,
-  },
-  permissionBackText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: DS.textSecondary,
-  },
+  permissionBtnText: { fontSize: 16, fontWeight: '600', color: DS.textInverse },
+  permissionBackBtn: { marginTop: 16, paddingVertical: 8 },
+  permissionBackText: { fontSize: 14, fontWeight: '500', color: DS.textSecondary },
 
   // ─── Focus Ring ──────────────────────────────────────────
-  focusRing: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-  },
+  focusRing: { position: 'absolute', width: 64, height: 64 },
   focusCornerTL: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 16,
-    height: 16,
-    borderTopWidth: 2.5,
-    borderLeftWidth: 2.5,
-    borderColor: DS.accentGold,
-    borderTopLeftRadius: 4,
+    position: 'absolute', top: 0, left: 0, width: 16, height: 16,
+    borderTopWidth: 2.5, borderLeftWidth: 2.5, borderColor: DS.accentGold, borderTopLeftRadius: 4,
   },
   focusCornerTR: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderTopWidth: 2.5,
-    borderRightWidth: 2.5,
-    borderColor: DS.accentGold,
-    borderTopRightRadius: 4,
+    position: 'absolute', top: 0, right: 0, width: 16, height: 16,
+    borderTopWidth: 2.5, borderRightWidth: 2.5, borderColor: DS.accentGold, borderTopRightRadius: 4,
   },
   focusCornerBL: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    width: 16,
-    height: 16,
-    borderBottomWidth: 2.5,
-    borderLeftWidth: 2.5,
-    borderColor: DS.accentGold,
-    borderBottomLeftRadius: 4,
+    position: 'absolute', bottom: 0, left: 0, width: 16, height: 16,
+    borderBottomWidth: 2.5, borderLeftWidth: 2.5, borderColor: DS.accentGold, borderBottomLeftRadius: 4,
   },
   focusCornerBR: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderBottomWidth: 2.5,
-    borderRightWidth: 2.5,
-    borderColor: DS.accentGold,
-    borderBottomRightRadius: 4,
+    position: 'absolute', bottom: 0, right: 0, width: 16, height: 16,
+    borderBottomWidth: 2.5, borderRightWidth: 2.5, borderColor: DS.accentGold, borderBottomRightRadius: 4,
   },
 
   // ─── Floating Zoom Badge ─────────────────────────────────
   zoomBadge: {
-    position: 'absolute',
-    top: '45%',
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: OVERLAY.pill,
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: OVERLAY.pillBorder,
+    position: 'absolute', top: '45%', alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: OVERLAY.pill, borderRadius: 20,
+    paddingVertical: 6, paddingHorizontal: 14, gap: 6,
+    borderWidth: 1, borderColor: OVERLAY.pillBorder,
   },
-  zoomBadgeText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  zoomBadgeText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // ─── Top Bar ─────────────────────────────────────────────
   topBar: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20,
   },
-  topRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
   topBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: OVERLAY.btnBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: OVERLAY.btnBorder,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: OVERLAY.btnBg, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: OVERLAY.btnBorder,
   },
-  topBtnActive: {
-    backgroundColor: 'rgba(232, 160, 32, 0.2)',
-    borderColor: 'rgba(232, 160, 32, 0.4)',
-  },
-
-  // Flash pill (Apple-style)
-  flashPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(232, 160, 32, 0.18)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(232, 160, 32, 0.35)',
-    overflow: 'hidden',
-  },
-  flashPillOff: {
-    backgroundColor: OVERLAY.btnBg,
-    borderColor: OVERLAY.btnBorder,
-  },
-  flashPillInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    gap: 4,
-  },
-  flashAutoLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DS.accentGold,
-    marginLeft: 1,
-  },
-  flashStateText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DS.accentGold,
-    marginLeft: 2,
+  doneBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(232, 160, 32, 0.18)', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(232, 160, 32, 0.35)',
   },
 
   // ─── Bottom Controls ─────────────────────────────────────
   bottomControls: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingBottom: 8,
+    position: 'absolute', bottom: 0, left: 0, right: 0, alignItems: 'center', paddingBottom: 8,
   },
 
   // Zoom row
   zoomRow: {
-    flexDirection: 'row',
-    backgroundColor: OVERLAY.pill,
-    borderRadius: 24,
-    padding: 3,
-    marginBottom: 28,
-    borderWidth: 1,
-    borderColor: OVERLAY.pillBorder,
+    flexDirection: 'row', backgroundColor: OVERLAY.pill, borderRadius: 24, padding: 3,
+    marginBottom: 28, borderWidth: 1, borderColor: OVERLAY.pillBorder,
   },
   zoomBtn: {
-    width: 42,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 1,
+    width: 42, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginHorizontal: 1,
   },
-  zoomBtnActive: {
-    backgroundColor: DS.accentGold,
-  },
-  zoomText: {
-    color: OVERLAY.white80,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  zoomTextActive: {
-    color: '#000',
-    fontWeight: '700',
-  },
+  zoomBtnActive: { backgroundColor: DS.accentGold },
+  zoomText: { color: OVERLAY.white80, fontSize: 13, fontWeight: '600' },
+  zoomTextActive: { color: '#000', fontWeight: '700' },
 
   // Capture row
   captureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 44,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    width: '100%', paddingHorizontal: 44,
   },
 
-  // Side buttons (gallery & manual)
+  // Side buttons
   sideBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: OVERLAY.btnBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: OVERLAY.btnBorder,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: OVERLAY.btnBg, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: OVERLAY.btnBorder,
+  },
+  sideBtnFlashOn: {
+    backgroundColor: 'rgba(232, 160, 32, 0.18)',
+    borderColor: 'rgba(232, 160, 32, 0.35)',
+  },
+
+  // Thumbnail stack (accumulation state)
+  thumbnailBtn: {
+    width: 56, height: 56, borderRadius: 14, overflow: 'hidden',
+    borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  thumbnailImage: {
+    width: '100%', height: '100%',
+  },
+  countBadge: {
+    position: 'absolute', top: -6, right: -6,
+    minWidth: 22, height: 22, borderRadius: 11,
+    backgroundColor: DS.accentGold,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 2, borderColor: '#000',
+  },
+  countBadgeText: {
+    fontSize: 11, fontWeight: '800', color: '#fff',
   },
 
   // Capture button
-  captureOuter: {
-    padding: 4,
-  },
+  captureOuter: { padding: 4 },
   captureCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: OVERLAY.white30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: OVERLAY.white30, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 3, borderColor: '#fff',
   },
   captureInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 58, height: 58, borderRadius: 29, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
   },
-  capturingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: DS.negative,
-  },
+  capturingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: DS.negative },
 
-  // ─── Error Modal ─────────────────────────────────────────
+  // ─── Modals ──────────────────────────────────────────────
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
+    flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
   },
   modalCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 340,
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: 24, padding: 28,
+    alignItems: 'center', width: '100%', maxWidth: 340,
+    borderWidth: 1, borderColor: DS.border,
   },
   modalIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FDF2EF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    width: 56, height: 56, borderRadius: 28, backgroundColor: '#FDF2EF',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DS.textPrimary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  modalMessage: {
-    fontSize: 14,
-    color: DS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: DS.textPrimary, marginBottom: 8, textAlign: 'center' },
+  modalMessage: { fontSize: 14, color: DS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  modalBtnRow: { flexDirection: 'row', gap: 10, width: '100%' },
   modalBtn: {
-    backgroundColor: DS.brandNavy,
-    height: 46,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    width: '100%',
+    flex: 1, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexDirection: 'row',
   },
-  modalBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: DS.textInverse,
-  },
-  modalBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-  },
-  modalBtnSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: DS.border,
-  },
-  modalBtnSecondaryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: DS.textSecondary,
-  },
+  modalBtnPrimary: { backgroundColor: DS.brandNavy },
+  modalBtnSecondary: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: DS.border },
+  modalBtnDestructive: { backgroundColor: DS.negative },
+  modalBtnSecondaryText: { fontSize: 16, fontWeight: '600', color: DS.textSecondary },
+  modalBtnText: { fontSize: 16, fontWeight: '600', color: DS.textInverse },
 });
