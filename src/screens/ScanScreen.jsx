@@ -232,8 +232,7 @@ export default function ScanScreen({ navigation }) {
 
   // ─── Thumbnail tap — gallery of captures ───────────────────
   const handleThumbnailTap = () => {
-    // TODO: Open gallery preview of all scans
-    // For now just a placeholder
+    navigation.navigate('ScanGallery');
   };
 
   // Focus animation values
@@ -377,13 +376,19 @@ export default function ScanScreen({ navigation }) {
 
           {/* Left button — Gallery (fresh) or Thumbnail stack (accumulation) */}
           {hasScans ? (
-            <TouchableOpacity style={styles.thumbnailBtn} onPress={handleThumbnailTap} activeOpacity={0.7}>
-              <Image
-                source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
-                style={styles.thumbnailImage}
-              />
-              <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
-                <Text style={styles.countBadgeText}>{scans.length}</Text>
+            <TouchableOpacity style={styles.thumbnailWrap} onPress={handleThumbnailTap} activeOpacity={0.7}>
+              {/* Stacked card behind (if 2+ scans) */}
+              {scans.length > 1 && (
+                <View style={styles.thumbnailStack} />
+              )}
+              <Animated.View style={[styles.thumbnailBtn, { transform: [{ scale: badgePulse }] }]}>
+                <Image
+                  source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
+                  style={styles.thumbnailImage}
+                />
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{scans.length}</Text>
+                </View>
               </Animated.View>
             </TouchableOpacity>
           ) : (
@@ -617,20 +622,30 @@ const styles = StyleSheet.create({
   },
 
   // Thumbnail stack (accumulation state)
+  thumbnailWrap: {
+    width: 56, height: 56,
+  },
+  thumbnailStack: {
+    position: 'absolute',
+    top: 3, left: 3,
+    width: 50, height: 50, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
   thumbnailBtn: {
     width: 56, height: 56, borderRadius: 14, overflow: 'hidden',
-    borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: '#000',
   },
   thumbnailImage: {
-    width: '100%', height: '100%',
+    width: '100%', height: '100%', borderRadius: 12,
   },
   countBadge: {
-    position: 'absolute', top: -6, right: -6,
-    minWidth: 22, height: 22, borderRadius: 11,
+    position: 'absolute', top: 3, right: 3,
+    minWidth: 20, height: 20, borderRadius: 10,
     backgroundColor: DS.accentGold,
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 5,
-    borderWidth: 2, borderColor: '#000',
+    paddingHorizontal: 4,
   },
   countBadgeText: {
     fontSize: 11, fontWeight: '800', color: '#fff',

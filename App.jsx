@@ -16,11 +16,13 @@ import TabNavigator from './src/navigation/TabNavigator';
 import DetailScreen from './src/screens/DetailScreen';
 import PreviewScreen from './src/screens/PreviewScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
+import ScanGalleryScreen from './src/screens/ScanGalleryScreen';
+import { ScanProvider } from './src/context/ScanContext';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import { ScanProvider } from './src/context/ScanContext';
+
 
 const Stack = createNativeStackNavigator();
 
@@ -96,6 +98,11 @@ const App = () => {
                   name="ManualEntry"
                   component={ManualEntryScreen}
                   options={{ animation: 'slide_from_right' }}
+                />
+                <Stack.Screen
+                name="ScanGallery"
+                component={ScanGalleryScreen}
+                options={{ animation: 'slide_from_left' }}
                 />
               </>
             ) : (
