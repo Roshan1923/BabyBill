@@ -17,6 +17,7 @@ import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
+import { launchImageLibrary } from "react-native-image-picker";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -349,33 +350,73 @@ function AnimatedPressable({ children, style, onPress }) {
 // ─── Action Buttons ──────────────────────────────────────────
 
 function ActionButtons({ navigation }) {
-  const plusScale = useRef(new Animated.Value(1)).current;
-  const popPlus = () => {
-    Animated.sequence([
-      Animated.spring(plusScale, { toValue: 0.75, useNativeDriver: true, speed: 60 }),
-      Animated.spring(plusScale, { toValue: 1, useNativeDriver: true, speed: 25, bounciness: 14 }),
+  const uploadScale = useRef(new Animated.Value(1)).current;
+  const manualScale = useRef(new Animated.Value(1)).current;
+  const uploadOpacity = useRef(new Animated.Value(1)).current;
+  const manualOpacity = useRef(new Animated.Value(1)).current;
+
+  const pressIn = (scale, opacity) => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 50 }),
+      Animated.timing(opacity, { toValue: 0.75, duration: 80, useNativeDriver: true }),
     ]).start();
+  };
+  const pressOut = (scale, opacity) => {
+    Animated.parallel([
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 35, bounciness: 8 }),
+      Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handleUpload = () => {
+    launchImageLibrary(
+      {
+        mediaType: "photo",
+        quality: 1,
+        selectionLimit: 1,
+      },
+      (response) => {
+        if (response.didCancel) return;
+        if (response.errorCode) {
+          console.log("Image picker error:", response.errorMessage);
+          return;
+        }
+        const asset = response.assets?.[0];
+        if (asset?.uri) {
+          const path = asset.uri.startsWith("file://")
+            ? asset.uri.replace("file://", "")
+            : asset.uri;
+          navigation.navigate("Preview", { photoPath: path });
+        }
+      }
+    );
   };
 
   return (
     <View style={styles.actionRow}>
-      <AnimatedPressable
-        style={styles.actionPill}
-        onPress={() => navigation && navigation.navigate("Scan")}
+      <TouchableOpacity
+        activeOpacity={1}
+        onPressIn={() => pressIn(uploadScale, uploadOpacity)}
+        onPressOut={() => pressOut(uploadScale, uploadOpacity)}
+        onPress={handleUpload}
+        style={{ flex: 1 }}
       >
-        <Ionicons name="cloud-upload-outline" size={18} color={DS.textPrimary} />
-        <Text style={styles.actionPillText}>Upload</Text>
-      </AnimatedPressable>
-      <AnimatedPressable
-        style={styles.actionPill}
+        <Animated.View style={[styles.actionBtn, { transform: [{ scale: uploadScale }], opacity: uploadOpacity }]}>
+          <Ionicons name="cloud-upload-outline" size={18} color={DS.brandNavy} />
+          <Text style={styles.actionBtnText}>Upload</Text>
+        </Animated.View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={1}
+        onPressIn={() => pressIn(manualScale, manualOpacity)}
+        onPressOut={() => pressOut(manualScale, manualOpacity)}
         onPress={() => navigation && navigation.navigate("ManualEntry")}
+        style={{ flex: 1 }}
       >
-        <Icon name="edit-3" size={16} color={DS.textPrimary} />
-        <Text style={styles.actionPillText}>Manual</Text>
-      </AnimatedPressable>
-      <TouchableOpacity activeOpacity={1} onPress={popPlus}>
-        <Animated.View style={[styles.plusBtn, { transform: [{ scale: plusScale }] }]}>
-          <Icon name="plus" size={22} color={DS.textInverse} />
+        <Animated.View style={[styles.actionBtn, { transform: [{ scale: manualScale }], opacity: manualOpacity }]}>
+          <Icon name="edit-3" size={16} color={DS.brandNavy} />
+          <Text style={styles.actionBtnText}>Manual</Text>
         </Animated.View>
       </TouchableOpacity>
     </View>
@@ -479,6 +520,7 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [profile, setProfile] = useState(null);
 
   // Fetch all receipts from Supabase
   const fetchReceipts = useCallback(async (isRefresh = false) => {
@@ -491,6 +533,14 @@ export default function HomeScreen({ navigation }) {
         setReceipts([]);
         return;
       }
+
+      // Fetch profile for name
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", user.id)
+        .single();
+      if (profileData) setProfile(profileData);
 
       const { data, error } = await supabase
         .from("receipts")
@@ -567,7 +617,7 @@ export default function HomeScreen({ navigation }) {
           />
         }
       >
-        <HeaderRow userName="Roshan" />
+        <HeaderRow userName={profile?.first_name || "User"} />
         <Text style={styles.pageTitle}>Overview</Text>
 
         {loading ? (
@@ -742,25 +792,17 @@ const styles = StyleSheet.create({
   pendingTxt: { fontSize: 13, fontWeight: "600" },
 
   // Action buttons
-  actionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
-  actionPill: {
+  actionRow: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 12 },
+  actionBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    height: DS.buttonHeight, borderRadius: 999, backgroundColor: DS.bgSurface,
-    width: (SCREEN_WIDTH - 40 - DS.fabPlus - 16) / 2, gap: 7,
+    height: 48, borderRadius: 999, backgroundColor: DS.bgSurface, gap: 8,
+    borderWidth: 1.5, borderColor: DS.brandNavy,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 12 },
       android: { elevation: 2 },
     }),
   },
-  actionPillText: { fontSize: 14, fontWeight: "600", color: DS.textPrimary },
-  plusBtn: {
-    width: DS.fabPlus, height: DS.fabPlus, borderRadius: DS.fabPlus / 2,
-    backgroundColor: DS.accentGold, alignItems: "center", justifyContent: "center",
-    ...Platform.select({
-      ios: { shadowColor: "rgba(232,160,32,0.35)", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 16 },
-      android: { elevation: 6 },
-    }),
-  },
+  actionBtnText: { fontSize: 14, fontWeight: "600", color: DS.brandNavy },
 
   // Recent Receipts section
   receiptsSection: { marginTop: 20 },
