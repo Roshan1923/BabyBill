@@ -23,6 +23,7 @@ import ProfileEditScreen from './src/screens/ProfileEditScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import CurrencyScreen from './src/screens/CurrencyScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
