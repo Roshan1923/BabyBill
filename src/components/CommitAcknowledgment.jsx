@@ -3,182 +3,181 @@ import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Animated,
-  Platform,
-  StatusBar,
   Dimensions,
+  Platform,
+  Easing,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const DS = {
-  bgSurface:     '#FFFEFB',
-  brandNavy:     '#1A3A6B',
-  accentGold:    '#E8A020',
-  accentGoldSub: '#FEF3DC',
-  textPrimary:   '#1C1610',
-  textSecondary: '#8A7E72',
-  textInverse:   '#FFFEFB',
-  positive:      '#2A8C5C',
-  border:        '#EDE8E0',
+  bgSurface:   '#FFFEFB',
+  brandNavy:    '#1A3A6B',
+  accentGold:   '#E8A020',
+  accentGoldSub:'#FEF3DC',
+  textPrimary:  '#1C1610',
+  textSecondary:'#8A7E72',
+  positive:     '#2A8C5C',
+  positiveSub:  '#E8F5EE',
+  border:       '#EDE8E0',
 };
 
-export default function ScanConfirmOverlay({ scanCount, onViewProgress, onClose }) {
+/**
+ * CommitAcknowledgment
+ *
+ * Renders a bottom-up slide card that celebrates the scan commit.
+ * Auto-dismisses and calls onComplete after the animation finishes.
+ *
+ * Props:
+ *   scanCount  — number of scans captured
+ *   onComplete — called when animation finishes, navigate to Pending
+ */
+export default function CommitAcknowledgment({ scanCount = 1, onComplete }) {
+  const slideY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const cardTranslateY = useRef(new Animated.Value(80)).current;
-  const cardOpacity = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
-  const checkRotate = useRef(new Animated.Value(0)).current;
-  const countScale = useRef(new Animated.Value(0.5)).current;
-  const shimmer = useRef(new Animated.Value(0)).current;
+  const checkOpacity = useRef(new Animated.Value(0)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const subTextOpacity = useRef(new Animated.Value(0)).current;
+  const dotPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Staggered entrance
-    Animated.parallel([
-      // Backdrop fade
-      Animated.timing(backdropOpacity, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      // Card slides up
-      Animated.spring(cardTranslateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        speed: 14,
-        bounciness: 8,
-        delay: 50,
-      }),
-      Animated.timing(cardOpacity, {
-        toValue: 1,
-        duration: 200,
-        delay: 50,
-        useNativeDriver: true,
-      }),
-      // Check icon pops in
-      Animated.spring(checkScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 12,
-        bounciness: 14,
-        delay: 200,
-      }),
-      Animated.timing(checkRotate, {
-        toValue: 1,
-        duration: 400,
-        delay: 200,
-        useNativeDriver: true,
-      }),
-      // Count number scales in
-      Animated.spring(countScale, {
-        toValue: 1,
-        useNativeDriver: true,
-        speed: 14,
-        bounciness: 10,
-        delay: 350,
-      }),
-    ]).start();
-
-    // Subtle shimmer loop on the gold circle
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shimmer, {
+    const sequence = Animated.sequence([
+      // ── 1. Slide card up + fade backdrop (0–300ms) ──
+      Animated.parallel([
+        Animated.spring(slideY, {
           toValue: 0,
-          duration: 2000,
+          useNativeDriver: true,
+          speed: 14,
+          bounciness: 6,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 200,
           useNativeDriver: true,
         }),
-      ])
-    ).start();
+      ]),
+
+      // ── 2. Checkmark pops in (300–500ms) ──
+      Animated.parallel([
+        Animated.spring(checkScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          speed: 16,
+          bounciness: 14,
+        }),
+        Animated.timing(checkOpacity, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]),
+
+      // ── 3. Title text fades in (500–650ms) ──
+      Animated.timing(textOpacity, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+
+      // Brief hold
+      Animated.delay(300),
+
+      // ── 4. Subtitle "Processing started" fades in (950–1100ms) ──
+      Animated.parallel([
+        Animated.timing(subTextOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        // Pulse the dots
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(dotPulse, { toValue: 1, duration: 400, useNativeDriver: true }),
+            Animated.timing(dotPulse, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+          ]),
+          { iterations: 2 }
+        ),
+      ]),
+
+      // Hold for a moment
+      Animated.delay(500),
+
+      // ── 5. Slide back down + fade out (1600–1900ms) ──
+      Animated.parallel([
+        Animated.timing(slideY, {
+          toValue: SCREEN_HEIGHT,
+          duration: 300,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.cubic),
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]);
+
+    sequence.start(() => {
+      if (onComplete) onComplete();
+    });
   }, []);
 
-  const checkRotateInterpolate = checkRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-30deg', '0deg'],
-  });
-
-  const shimmerOpacity = shimmer.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0.08, 0.2, 0.08],
+  const dotOpacity = dotPulse.interpolate({
+    inputRange: [0, 0.3, 1],
+    outputRange: [0.3, 0.3, 1],
   });
 
   return (
-    <View style={StyleSheet.absoluteFill}>
-      {/* Backdrop */}
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {/* Subtle backdrop dim */}
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: 'rgba(0,0,0,0.65)', opacity: backdropOpacity },
+          { backgroundColor: 'rgba(0,0,0,0.3)', opacity: backdropOpacity },
         ]}
       />
 
-      {/* Card */}
+      {/* Slide-up card */}
       <Animated.View
         style={[
           styles.cardContainer,
-          {
-            opacity: cardOpacity,
-            transform: [{ translateY: cardTranslateY }],
-          },
+          { transform: [{ translateY: slideY }] },
         ]}
       >
         <View style={styles.card}>
-          {/* Gold circle with check */}
-          <View style={styles.iconArea}>
-            {/* Shimmer ring */}
-            <Animated.View style={[styles.shimmerRing, { opacity: shimmerOpacity }]} />
+          {/* Handle bar */}
+          <View style={styles.handle} />
 
-            <Animated.View
-              style={[
-                styles.checkCircle,
-                {
-                  transform: [
-                    { scale: checkScale },
-                    { rotate: checkRotateInterpolate },
-                  ],
-                },
-              ]}
-            >
-              <Ionicons name="checkmark-sharp" size={28} color="#fff" />
-            </Animated.View>
-          </View>
-
-          {/* Count */}
-          <Animated.View style={{ transform: [{ scale: countScale }] }}>
-            <Text style={styles.countText}>
-              {scanCount} {scanCount === 1 ? 'Receipt' : 'Receipts'} Captured
-            </Text>
+          {/* Checkmark circle */}
+          <Animated.View
+            style={[
+              styles.checkCircle,
+              {
+                opacity: checkOpacity,
+                transform: [{ scale: checkScale }],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark" size={32} color={DS.positive} />
           </Animated.View>
 
-          <Text style={styles.subtitleText}>
-            Processing has started. You can track{'\n'}progress in your pending receipts.
-          </Text>
+          {/* Title */}
+          <Animated.Text style={[styles.title, { opacity: textOpacity }]}>
+            {scanCount} {scanCount === 1 ? 'scan' : 'scans'} captured
+          </Animated.Text>
 
-          {/* CTA */}
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={onViewProgress}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.primaryBtnText}>View Progress</Text>
-            <Ionicons name="arrow-forward" size={18} color={DS.textInverse} />
-          </TouchableOpacity>
-
-          {/* Secondary */}
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={onClose}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.secondaryBtnText}>Continue Scanning</Text>
-          </TouchableOpacity>
+          {/* Subtitle with animated dots */}
+          <Animated.View style={[styles.subRow, { opacity: subTextOpacity }]}>
+            <Text style={styles.subtitle}>Processing started</Text>
+            <Animated.Text style={[styles.dots, { opacity: dotOpacity }]}>
+              {' '}···
+            </Animated.Text>
+          </Animated.View>
         </View>
       </Animated.View>
     </View>
@@ -187,114 +186,69 @@ export default function ScanConfirmOverlay({ scanCount, onViewProgress, onClose 
 
 const styles = StyleSheet.create({
   cardContainer: {
-    flex: 1,
-    justifyContent: 'center',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    paddingHorizontal: 28,
   },
   card: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 28,
-    paddingTop: 36,
-    paddingBottom: 24,
-    paddingHorizontal: 28,
-    alignItems: 'center',
     width: '100%',
-    maxWidth: 340,
+    backgroundColor: DS.bgSurface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 50 : 36,
+    paddingHorizontal: 32,
+    alignItems: 'center',
     borderWidth: 1,
+    borderBottomWidth: 0,
     borderColor: DS.border,
     ...Platform.select({
       ios: {
         shadowColor: 'rgba(26,58,107,0.15)',
-        shadowOffset: { width: 0, height: 12 },
+        shadowOffset: { width: 0, height: -8 },
         shadowOpacity: 1,
-        shadowRadius: 32,
+        shadowRadius: 24,
       },
-      android: { elevation: 8 },
+      android: { elevation: 16 },
     }),
   },
-
-  // Icon area
-  iconArea: {
-    marginBottom: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shimmerRing: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: DS.accentGold,
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: DS.border,
+    marginBottom: 24,
   },
   checkCircle: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: DS.accentGold,
+    backgroundColor: DS.positiveSub,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: 'rgba(232,160,32,0.4)',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 1,
-        shadowRadius: 16,
-      },
-      android: { elevation: 6 },
-    }),
+    marginBottom: 16,
   },
-
-  // Text
-  countText: {
-    fontSize: 22,
+  title: {
+    fontSize: 20,
     fontWeight: '700',
     color: DS.textPrimary,
-    textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     letterSpacing: -0.3,
   },
-  subtitleText: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: DS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 28,
-  },
-
-  // Buttons
-  primaryBtn: {
+  subRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: DS.brandNavy,
-    height: 52,
-    borderRadius: 16,
-    width: '100%',
-    ...Platform.select({
-      ios: {
-        shadowColor: 'rgba(26,58,107,0.25)',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 1,
-        shadowRadius: 12,
-      },
-      android: { elevation: 4 },
-    }),
   },
-  primaryBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: DS.textInverse,
-  },
-  secondaryBtn: {
-    marginTop: 14,
-    paddingVertical: 10,
-  },
-  secondaryBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
+  subtitle: {
+    fontSize: 15,
+    fontWeight: '500',
     color: DS.textSecondary,
+  },
+  dots: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: DS.accentGold,
   },
 });
