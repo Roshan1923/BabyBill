@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,79 +10,43 @@ import {
   Animated,
   Dimensions,
   Easing,
-  Modal,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const OVERLAY = {
-  btnBg: 'rgba(15, 15, 15, 0.5)',
-  btnBorder: 'rgba(255, 255, 255, 0.15)',
-  pillBg: 'rgba(15, 15, 15, 0.55)',
+  btnBg:      'rgba(15, 15, 15, 0.5)',
+  btnBorder:  'rgba(255, 255, 255, 0.15)',
+  pillBg:     'rgba(15, 15, 15, 0.55)',
   pillBorder: 'rgba(255, 255, 255, 0.12)',
 };
 
-/**
- * PreviewOverlay
- * - Shows captured photo full screen on top of ScanScreen (camera remains behind)
- * - On "Keep": animates the image into the left target (gallery/thumb slot), then calls onKeep(photoPath, rotation)
- *
- * Props:
- *  visible: boolean
- *  photoPath: string | null  (absolute file path, WITHOUT file://)
- *  targetCenter: { x: number, y: number } | null
- *  onRetake: () => void
- *  onKeep: ({ photoPath, rotation }) => void
- */
-export default function PreviewOverlay({
-  visible,
-  photoPath,
-  targetCenter,
-  onRetake,
-  onKeep,
-}) {
-  const photoUri = useMemo(() => (photoPath ? 'file://' + photoPath : null), [photoPath]);
+// Target: bottom-left thumbnail on camera (approximate)
+const THUMB_X = 44 + 33;
+const THUMB_Y = SCREEN_HEIGHT - (Platform.OS === 'ios' ? 120 : 100);
+
+export default function PreviewOverlay({ photoPath, onKeep, onRetake }) {
+  const photoUri = 'file://' + photoPath;
 
   const [rotation, setRotation] = useState(0);
-  const [flyingAway, setFlyingAway] = useState(false);
+  const [animating, setAnimating] = useState(false);
 
-  // rotation anim
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
 
-  // fly anim
-  const flyProgress = useRef(new Animated.Value(0)).current;
-  const uiOpacity = useRef(new Animated.Value(1)).current;
+  // ─── Keep Scan animation values ────────────────────────────
+  const overlayOpacity = useRef(new Animated.Value(1)).current;     // dims the dark bg
+  const uiOpacity = useRef(new Animated.Value(1)).current;          // hides buttons/gradients
+  const imageScale = useRef(new Animated.Value(1)).current;         // pop + fly scale
+  const imageTranslateX = useRef(new Animated.Value(0)).current;
+  const imageTranslateY = useRef(new Animated.Value(0)).current;
+  const imageRotateZ = useRef(new Animated.Value(0)).current;       // slight tilt during fly
+  const imageOpacity = useRef(new Animated.Value(1)).current;
 
-  // "cardify" trick (native driver doesn't animate borderRadius)
-  const [rounded, setRounded] = useState(false);
-
-  useEffect(() => {
-    if (!visible) return;
-    // reset whenever opened
-    setRotation(0);
-    setFlyingAway(false);
-    setRounded(false);
-    rotateAnim.setValue(0);
-    spinAnim.setValue(0);
-    flyProgress.setValue(0);
-    uiOpacity.setValue(1);
-  }, [visible, rotateAnim, spinAnim, flyProgress, uiOpacity]);
-
-  const rotateInterpolate = rotateAnim.interpolate({
-    inputRange: Array.from({ length: 20 }, (_, i) => i),
-    outputRange: Array.from({ length: 20 }, (_, i) => `${i * 90}deg`),
-  });
-
-  const iconSpin = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '-90deg'],
-  });
-
-  const handleRotate = () => {
-    if (flyingAway) return;
+  // ─── Rotate ────────────────────────────────────────────────
+  const handleRotate = useCallback(() => {
+    if (animating) return;
     const next = rotation + 90;
     setRotation(next);
 
@@ -99,149 +63,224 @@ export default function PreviewOverlay({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  };
+  }, [rotation, animating]);
 
-  const handleKeep = () => {
-    if (flyingAway || !photoPath) return;
+  const rotateInterpolate = rotateAnim.interpolate({
+    inputRange: Array.from({ length: 20 }, (_, i) => i),
+    outputRange: Array.from({ length: 20 }, (_, i) => `${i * 90}deg`),
+  });
 
-    setFlyingAway(true);
+  const iconSpin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-90deg'],
+  });
 
-    // Fade UI quickly (Apple-like)
-    Animated.timing(uiOpacity, {
-      toValue: 0,
-      duration: 120,
+  // Fly tilt interpolation
+  const tiltInterpolate = imageRotateZ.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-3deg'],
+  });
+
+  // ─── Retake ────────────────────────────────────────────────
+  const handleRetake = useCallback(() => {
+    if (animating) return;
+    onRetake();
+  }, [animating, onRetake]);
+
+  // ─── Keep Scan — 4-phase Apple Notes animation ─────────────
+  const handleKeep = useCallback(() => {
+    if (animating) return;
+    setAnimating(true);
+
+    const targetX = -(SCREEN_WIDTH / 2) + THUMB_X;
+    const targetY = THUMB_Y - (SCREEN_HEIGHT / 2);
+
+    // ── Phase 1: Pop (0–80ms) ──
+    // Slight scale up for tap confirmation
+    Animated.timing(imageScale, {
+      toValue: 1.04,
+      duration: 80,
       useNativeDriver: true,
-    }).start();
+      easing: Easing.out(Easing.cubic),
+    }).start(() => {
 
-    // Cardify midway
-    setTimeout(() => setRounded(true), 180);
-
-    // Pop then fly (Apple "physical" feel)
-    flyProgress.setValue(0);
-    Animated.sequence([
-      Animated.timing(flyProgress, { toValue: 0.04, duration: 70, useNativeDriver: true }),
-      Animated.timing(flyProgress, {
-        toValue: 1,
-        duration: 380,
-        easing: Easing.out(Easing.cubic),
+      // ── Phase 2: Reveal camera (0–120ms, overlaps with phase 3) ──
+      // Fade out the dark overlay so camera shows through
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 180,
         useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onKeep?.({ photoPath, rotation });
+        easing: Easing.out(Easing.quad),
+      }).start();
+
+      // Fade out UI buttons immediately
+      Animated.timing(uiOpacity, {
+        toValue: 0,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+
+      // ── Phase 3: Fly to target (120–320ms) ──
+      // Scale down, translate to thumbnail, slight tilt
+      Animated.parallel([
+        Animated.timing(imageScale, {
+          toValue: 0.13,
+          duration: 320,
+          useNativeDriver: true,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+        }),
+        Animated.timing(imageTranslateX, {
+          toValue: targetX,
+          duration: 320,
+          useNativeDriver: true,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+        }),
+        Animated.timing(imageTranslateY, {
+          toValue: targetY,
+          duration: 320,
+          useNativeDriver: true,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+        }),
+        Animated.timing(imageRotateZ, {
+          toValue: 1,
+          duration: 320,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+      ]).start(() => {
+
+        // ── Phase 4: Settle + bounce (last 80ms) ──
+        Animated.sequence([
+          Animated.timing(imageScale, {
+            toValue: 0.10,
+            duration: 50,
+            useNativeDriver: true,
+          }),
+          Animated.spring(imageScale, {
+            toValue: 0.12,
+            useNativeDriver: true,
+            speed: 40,
+            bounciness: 15,
+          }),
+        ]).start(() => {
+          // Fade out the clone
+          Animated.timing(imageOpacity, {
+            toValue: 0,
+            duration: 60,
+            useNativeDriver: true,
+          }).start(() => {
+            onKeep({ photoPath, rotation });
+          });
+        });
+      });
     });
-  };
-
-  // compute target deltas (center of screen -> target center)
-  const targetX = targetCenter?.x ?? 60;
-  const targetY = targetCenter?.y ?? (SCREEN_HEIGHT - 120);
-
-  const dx = targetX - SCREEN_WIDTH / 2;
-  const dy = targetY - SCREEN_HEIGHT / 2;
-
-  const flyScale = flyProgress.interpolate({
-    inputRange: [0, 0.04, 1],
-    outputRange: [1, 1.03, 0.12],
-  });
-
-  const flyTranslateX = flyProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, dx],
-  });
-
-  const flyTranslateY = flyProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, dy],
-  });
-
-  if (!visible || !photoUri) return null;
+  }, [animating, photoPath, rotation, onKeep]);
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
 
-        {/* Full bleed image with fly animation */}
-        <Animated.View
+      {/* ── Dark background overlay (fades to reveal camera) ── */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: 'rgba(0,0,0,0.92)', opacity: overlayOpacity },
+        ]}
+        pointerEvents={animating ? 'none' : 'auto'}
+      />
+
+      {/* ── Image with fly animation ── */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            opacity: imageOpacity,
+            transform: [
+              { translateX: imageTranslateX },
+              { translateY: imageTranslateY },
+              { scale: imageScale },
+              { rotate: tiltInterpolate },
+            ],
+          },
+        ]}
+      >
+        <Animated.Image
+          source={{ uri: photoUri }}
           style={[
             StyleSheet.absoluteFill,
-            {
-              borderRadius: rounded ? 14 : 0,
-              overflow: 'hidden',
-              transform: [
-                { translateX: flyTranslateX },
-                { translateY: flyTranslateY },
-                { scale: flyScale },
-              ],
-            },
+            { transform: [{ rotate: rotateInterpolate }] },
           ]}
-          pointerEvents="none"
-        >
-          <Animated.Image
-            source={{ uri: photoUri }}
-            style={[
-              StyleSheet.absoluteFill,
-              { transform: [{ rotate: rotateInterpolate }] },
-            ]}
-            resizeMode="cover"
-          />
-        </Animated.View>
+          resizeMode="contain"
+        />
+      </Animated.View>
 
-        {/* Top gradient fade */}
-        <Animated.View style={{ opacity: uiOpacity }} pointerEvents="none">
-          <LinearGradient
-            colors={['rgba(0,0,0,0.45)', 'rgba(0,0,0,0.15)', 'transparent']}
-            style={styles.topGradient}
-          />
-        </Animated.View>
+      {/* ── Top gradient ── */}
+      <Animated.View
+        style={[styles.topGradient, { opacity: uiOpacity }]}
+        pointerEvents={animating ? 'none' : 'auto'}
+      >
+        <View style={styles.gradientInner} />
+      </Animated.View>
 
-        {/* Bottom gradient fade */}
-        <Animated.View style={{ opacity: uiOpacity }} pointerEvents="none">
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.5)']}
-            style={styles.bottomGradient}
-          />
-        </Animated.View>
+      {/* ── Bottom gradient ── */}
+      <Animated.View
+        style={[styles.bottomGradient, { opacity: uiOpacity }]}
+        pointerEvents={animating ? 'none' : 'auto'}
+      >
+        <View style={styles.gradientInnerBottom} />
+      </Animated.View>
 
-        {/* Top Bar */}
-        <Animated.View
-          style={[styles.topBar, { opacity: uiOpacity }]}
-          pointerEvents={flyingAway ? 'none' : 'auto'}
-        >
-          <TouchableOpacity style={styles.topBtn} onPress={onRetake} activeOpacity={0.7}>
-            <Ionicons name="close" size={22} color="#fff" />
-          </TouchableOpacity>
+      {/* ── Top Bar: Retake & Keep ── */}
+      <Animated.View
+        style={[styles.topBar, { opacity: uiOpacity }]}
+        pointerEvents={animating ? 'none' : 'auto'}
+      >
+        <TouchableOpacity style={styles.topBtn} onPress={handleRetake} activeOpacity={0.7}>
+          <Ionicons name="close" size={22} color="#fff" />
+        </TouchableOpacity>
 
-          <TouchableOpacity style={styles.topBtn} onPress={handleKeep} activeOpacity={0.7}>
-            <Ionicons name="checkmark" size={22} color="#fff" />
-          </TouchableOpacity>
-        </Animated.View>
+        <TouchableOpacity style={styles.topBtn} onPress={handleKeep} activeOpacity={0.7}>
+          <Ionicons name="checkmark" size={22} color="#fff" />
+        </TouchableOpacity>
+      </Animated.View>
 
-        {/* Bottom Rotate */}
-        <Animated.View
-          style={[styles.bottomBar, { opacity: uiOpacity }]}
-          pointerEvents={flyingAway ? 'none' : 'auto'}
-        >
-          <TouchableOpacity style={styles.rotatePill} onPress={handleRotate} activeOpacity={0.7}>
-            <Animated.View style={{ transform: [{ rotate: iconSpin }] }}>
-              <Ionicons name="sync-outline" size={18} color="#fff" />
-            </Animated.View>
-            <Text style={styles.rotateText}>Rotate</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
+      {/* ── Bottom: Rotate pill ── */}
+      <Animated.View
+        style={[styles.bottomBar, { opacity: uiOpacity }]}
+        pointerEvents={animating ? 'none' : 'auto'}
+      >
+        <TouchableOpacity style={styles.rotatePill} onPress={handleRotate} activeOpacity={0.7}>
+          <Animated.View style={{ transform: [{ rotate: iconSpin }] }}>
+            <Ionicons name="sync-outline" size={18} color="#fff" />
+          </Animated.View>
+          <Text style={styles.rotateText}>Rotate</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)' },
-
-  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 140 },
-  bottomGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 160 },
+  // Gradients (simple View-based since LinearGradient not needed in overlay)
+  topGradient: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 140,
+  },
+  gradientInner: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    opacity: 0.8,
+  },
+  bottomGradient: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 160,
+  },
+  gradientInnerBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    opacity: 0.8,
+  },
 
   topBar: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 56 : 40,
+    top: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight || 24) + 12,
     left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20,
@@ -264,5 +303,7 @@ const styles = StyleSheet.create({
     backgroundColor: OVERLAY.pillBg,
     borderWidth: 1, borderColor: OVERLAY.pillBorder,
   },
-  rotateText: { fontSize: 14, fontWeight: '600', color: 'rgba(255, 255, 255, 0.85)' },
+  rotateText: {
+    fontSize: 14, fontWeight: '600', color: 'rgba(255, 255, 255, 0.85)',
+  },
 });

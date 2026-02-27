@@ -20,8 +20,6 @@ import {
   openAppSettings,
 } from '../utils/permissions';
 import { useScanQueue } from '../context/ScanContext';
-
-// ✅ NEW: Preview overlay component (create this file as given earlier)
 import PreviewOverlay from '../components/PreviewOverlay';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -58,9 +56,7 @@ export default function ScanScreen({ navigation }) {
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
-
-  // ✅ CHANGED: also grab addScan (we add scan from the overlay)
-  const { scans, clearScans, addScan } = useScanQueue();
+  const { scans, addScan, clearScans } = useScanQueue();
 
   const hasScans = scans.length > 0;
 
@@ -68,6 +64,9 @@ export default function ScanScreen({ navigation }) {
   const [zoom, setZoom] = useState(1);
   const [focusPoint, setFocusPoint] = useState(null);
   const [capturing, setCapturing] = useState(false);
+
+  // Preview overlay state — photo shows as overlay on top of camera
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   // Modals
   const [showErrorModal, setShowErrorModal] = useState(false);
@@ -81,12 +80,6 @@ export default function ScanScreen({ navigation }) {
   const captureScale = useRef(new Animated.Value(1)).current;
   const zoomIndicatorOpacity = useRef(new Animated.Value(0)).current;
   const badgePulse = useRef(new Animated.Value(1)).current;
-
-  // ✅ NEW: Preview overlay state + measurement
-  const leftTargetRef = useRef(null); // measures bottom-left slot (gallery OR thumb stack)
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [previewPhotoPath, setPreviewPhotoPath] = useState(null);
-  const [previewTargetCenter, setPreviewTargetCenter] = useState(null);
 
   // Best format
   const format = useMemo(() => {
@@ -122,7 +115,6 @@ export default function ScanScreen({ navigation }) {
         bounciness: 12,
       }).start();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scans.length]);
 
   const showError = useCallback((title, message, settingsBtn = false) => {
@@ -132,25 +124,9 @@ export default function ScanScreen({ navigation }) {
     setShowErrorModal(true);
   }, []);
 
-  // ✅ NEW: open preview overlay and pass real measured target position
-  const openPreview = useCallback((path) => {
-    if (leftTargetRef.current) {
-      leftTargetRef.current.measureInWindow((x, y, w, h) => {
-        setPreviewTargetCenter({ x: x + w / 2, y: y + h / 2 });
-        setPreviewPhotoPath(path);
-        setPreviewVisible(true);
-      });
-    } else {
-      const { height } = Dimensions.get('window');
-      setPreviewTargetCenter({ x: 60, y: height - 120 });
-      setPreviewPhotoPath(path);
-      setPreviewVisible(true);
-    }
-  }, []);
-
   // ─── Tap to focus ──────────────────────────────────────────
   const handleTapToFocus = async (event) => {
-    if (!cameraRef.current) return;
+    if (!cameraRef.current || previewPhoto) return;
     try {
       const x = event.nativeEvent.locationX;
       const y = event.nativeEvent.locationY;
@@ -169,9 +145,9 @@ export default function ScanScreen({ navigation }) {
     }
   };
 
-  // ─── Capture ───────────────────────────────────────────────
+  // ─── Capture → show overlay (no navigation) ───────────────
   const handleCapture = async () => {
-    if (!cameraRef.current || capturing) return;
+    if (!cameraRef.current || capturing || previewPhoto) return;
     setCapturing(true);
 
     Animated.sequence([
@@ -187,15 +163,24 @@ export default function ScanScreen({ navigation }) {
         enableAutoRedEyeReduction: true,
         enableAutoStabilization: true,
       });
-
-      // ✅ CHANGED: open overlay instead of navigating to Preview screen
-      openPreview(photo.path);
+      // Show preview overlay — camera stays live underneath
+      setPreviewPhoto(photo.path);
     } catch (error) {
       showError('Capture Failed', 'Something went wrong while taking the photo. Please try again.');
     } finally {
       setCapturing(false);
     }
   };
+
+  // ─── Preview overlay callbacks ─────────────────────────────
+  const handlePreviewKeep = useCallback(({ photoPath, rotation }) => {
+    addScan({ photoPath, rotation });
+    setPreviewPhoto(null); // Dismiss overlay → camera visible with updated thumbnail
+  }, [addScan]);
+
+  const handlePreviewRetake = useCallback(() => {
+    setPreviewPhoto(null); // Dismiss overlay → camera ready for another shot
+  }, []);
 
   // ─── Flash toggle ──────────────────────────────────────────
   const toggleFlash = () => {
@@ -232,9 +217,7 @@ export default function ScanScreen({ navigation }) {
         if (response.assets && response.assets[0]) {
           const uri = response.assets[0].uri;
           const path = uri.replace('file://', '');
-
-          // ✅ CHANGED: open overlay instead of navigating to Preview screen
-          openPreview(path);
+          setPreviewPhoto(path); // Show as overlay, not navigation
         }
       }
     );
@@ -258,7 +241,6 @@ export default function ScanScreen({ navigation }) {
   // ─── Done — process all ────────────────────────────────────
   const handleDone = () => {
     // TODO: Navigate to Screen 4 (Processing)
-    // For now go home
     navigation.navigate('Home');
   };
 
@@ -326,6 +308,7 @@ export default function ScanScreen({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
+      {/* ── Live camera — always mounted ── */}
       <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
@@ -342,7 +325,7 @@ export default function ScanScreen({ navigation }) {
       />
 
       {/* ── Focus Indicator ── */}
-      {focusPoint && (
+      {focusPoint && !previewPhoto && (
         <Animated.View
           style={[
             styles.focusRing,
@@ -362,123 +345,138 @@ export default function ScanScreen({ navigation }) {
       )}
 
       {/* ── Floating Zoom Indicator ── */}
-      <Animated.View style={[styles.zoomBadge, { opacity: zoomIndicatorOpacity }]}>
-        <Ionicons name="search-outline" size={14} color="#fff" />
-        <Text style={styles.zoomBadgeText}>{zoom}x</Text>
-      </Animated.View>
+      {!previewPhoto && (
+        <Animated.View style={[styles.zoomBadge, { opacity: zoomIndicatorOpacity }]}>
+          <Ionicons name="search-outline" size={14} color="#fff" />
+          <Text style={styles.zoomBadgeText}>{zoom}x</Text>
+        </Animated.View>
+      )}
 
-      {/* ── Top Bar ── */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topBtn} onPress={handleClose} activeOpacity={0.7}>
-          <Ionicons name="close" size={22} color="#fff" />
-        </TouchableOpacity>
+      {/* ── Camera Controls (hidden when preview overlay is showing) ── */}
+      {!previewPhoto && (
+        <>
+          {/* Top Bar */}
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.topBtn} onPress={handleClose} activeOpacity={0.7}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
 
-        {/* Done button — only in accumulation state */}
-        {hasScans && (
-          <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.7}>
-            <Ionicons name="checkmark" size={20} color={DS.accentGold} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* ── Bottom Controls ── */}
-      <View style={styles.bottomControls}>
-
-        {/* Zoom selector */}
-        <View style={styles.zoomRow}>
-          {zoomLevels.map((level) => {
-            const isActive = zoom === level;
-            return (
-              <TouchableOpacity
-                key={level}
-                style={[styles.zoomBtn, isActive && styles.zoomBtnActive]}
-                onPress={() => handleZoom(level)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.zoomText, isActive && styles.zoomTextActive]}>
-                  {level === 0.5 ? '.5' : level}x
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Capture row */}
-        <View style={styles.captureRow}>
-
-          {/* ✅ CHANGED: wrap left slot with measurable View */}
-          <View ref={leftTargetRef} collapsable={false}>
-            {/* Left button — Gallery (fresh) or Thumbnail stack (accumulation) */}
-            {hasScans ? (
-              <TouchableOpacity style={styles.thumbnailWrap} onPress={handleThumbnailTap} activeOpacity={0.7}>
-                {/* 3rd card back (if 3+ scans) */}
-                {scans.length > 2 && (
-                  <View style={[styles.stackCard, styles.stackCard3]}>
-                    <Image
-                      source={{ uri: 'file://' + scans[scans.length - 3].photoPath }}
-                      style={styles.stackCardImage}
-                    />
-                  </View>
-                )}
-                {/* 2nd card back (if 2+ scans) */}
-                {scans.length > 1 && (
-                  <View style={[styles.stackCard, styles.stackCard2]}>
-                    <Image
-                      source={{ uri: 'file://' + scans[scans.length - 2].photoPath }}
-                      style={styles.stackCardImage}
-                    />
-                  </View>
-                )}
-                {/* Top card — latest scan */}
-                <Animated.View style={[styles.stackCardTop, { transform: [{ scale: badgePulse }] }]}>
-                  <Image
-                    source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
-                    style={styles.stackCardImage}
-                  />
-                </Animated.View>
-                {/* Badge — overlaps corner */}
-                <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
-                  <Text style={styles.countBadgeText}>{scans.length}</Text>
-                </Animated.View>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
-                <Ionicons name="images" size={24} color="#fff" />
+            {/* Done button — only in accumulation state */}
+            {hasScans && (
+              <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.7}>
+                <Ionicons name="checkmark" size={20} color={DS.accentGold} />
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Capture button */}
-          <TouchableOpacity
-            style={styles.captureOuter}
-            onPress={handleCapture}
-            activeOpacity={1}
-            disabled={capturing}
-          >
-            <Animated.View style={[styles.captureCircle, { transform: [{ scale: captureScale }] }]}>
-              <View style={styles.captureInner}>
-                {capturing && <View style={styles.capturingDot} />}
-              </View>
-            </Animated.View>
-          </TouchableOpacity>
+          {/* Bottom Controls */}
+          <View style={styles.bottomControls}>
+            {/* Zoom selector */}
+            <View style={styles.zoomRow}>
+              {zoomLevels.map((level) => {
+                const isActive = zoom === level;
+                return (
+                  <TouchableOpacity
+                    key={level}
+                    style={[styles.zoomBtn, isActive && styles.zoomBtnActive]}
+                    onPress={() => handleZoom(level)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.zoomText, isActive && styles.zoomTextActive]}>
+                      {level === 0.5 ? '.5' : level}x
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-          {/* Right button — Flash */}
-          <TouchableOpacity
-            style={[styles.sideBtn, flash === 'on' && styles.sideBtnFlashOn]}
-            onPress={toggleFlash}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={flash === 'on' ? 'flash' : 'flash-off'}
-              size={22}
-              color={flash === 'on' ? DS.accentGold : '#fff'}
-            />
-          </TouchableOpacity>
-        </View>
+            {/* Capture row */}
+            <View style={styles.captureRow}>
 
-        {/* Safe area spacer */}
-        <View style={{ height: Platform.OS === 'ios' ? 28 : 16 }} />
-      </View>
+              {/* Left: Gallery (fresh) or Thumbnail stack (accumulation) */}
+              {hasScans ? (
+                <TouchableOpacity style={styles.thumbnailWrap} onPress={handleThumbnailTap} activeOpacity={0.7}>
+                  {/* 3rd card back */}
+                  {scans.length > 2 && (
+                    <View style={[styles.stackCard, styles.stackCard3]}>
+                      <Image
+                        source={{ uri: 'file://' + scans[scans.length - 3].photoPath }}
+                        style={styles.stackCardImage}
+                      />
+                    </View>
+                  )}
+                  {/* 2nd card back */}
+                  {scans.length > 1 && (
+                    <View style={[styles.stackCard, styles.stackCard2]}>
+                      <Image
+                        source={{ uri: 'file://' + scans[scans.length - 2].photoPath }}
+                        style={styles.stackCardImage}
+                      />
+                    </View>
+                  )}
+                  {/* Top card */}
+                  <Animated.View style={[styles.stackCardTop, { transform: [{ scale: badgePulse }] }]}>
+                    <Image
+                      source={{ uri: 'file://' + scans[scans.length - 1].photoPath }}
+                      style={styles.stackCardImage}
+                    />
+                  </Animated.View>
+                  {/* Badge */}
+                  <Animated.View style={[styles.countBadge, { transform: [{ scale: badgePulse }] }]}>
+                    <Text style={styles.countBadgeText}>{scans.length}</Text>
+                  </Animated.View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.sideBtn} onPress={handleGallery} activeOpacity={0.7}>
+                  <Ionicons name="images" size={24} color="#fff" />
+                </TouchableOpacity>
+              )}
+
+              {/* Capture button */}
+              <TouchableOpacity
+                style={styles.captureOuter}
+                onPress={handleCapture}
+                activeOpacity={1}
+                disabled={capturing}
+              >
+                <Animated.View style={[styles.captureCircle, { transform: [{ scale: captureScale }] }]}>
+                  <View style={styles.captureInner}>
+                    {capturing && <View style={styles.capturingDot} />}
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
+
+              {/* Right: Flash */}
+              <TouchableOpacity
+                style={[styles.sideBtn, flash === 'on' && styles.sideBtnFlashOn]}
+                onPress={toggleFlash}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={flash === 'on' ? 'flash' : 'flash-off'}
+                  size={22}
+                  color={flash === 'on' ? DS.accentGold : '#fff'}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Safe area spacer */}
+            <View style={{ height: Platform.OS === 'ios' ? 28 : 16 }} />
+          </View>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
+          PREVIEW OVERLAY — renders on top of live camera
+          Camera stays mounted and visible during fly animation
+         ══════════════════════════════════════════════════════ */}
+      {previewPhoto && (
+        <PreviewOverlay
+          photoPath={previewPhoto}
+          onKeep={handlePreviewKeep}
+          onRetake={handlePreviewRetake}
+        />
+      )}
 
       {/* ─── Discard Modal ─── */}
       <Modal visible={showDiscardModal} transparent animationType="fade">
@@ -557,22 +555,6 @@ export default function ScanScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-
-      {/* ✅ NEW: Preview overlay (camera remains behind = Apple Notes illusion) */}
-      <PreviewOverlay
-        visible={previewVisible}
-        photoPath={previewPhotoPath}
-        targetCenter={previewTargetCenter}
-        onRetake={() => {
-          setPreviewVisible(false);
-          setPreviewPhotoPath(null);
-        }}
-        onKeep={({ photoPath, rotation }) => {
-          addScan({ photoPath, rotation });
-          setPreviewVisible(false);
-          setPreviewPhotoPath(null);
-        }}
-      />
     </View>
   );
 }
