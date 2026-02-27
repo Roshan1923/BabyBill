@@ -17,6 +17,11 @@ import DetailScreen from './src/screens/DetailScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
 import ScanGalleryScreen from './src/screens/ScanGalleryScreen';
 import { ScanProvider } from './src/context/ScanContext';
+import SettingsScreen from './src/screens/SettingsScreen';
+import ProfileEditScreen from './src/screens/ProfileEditScreen';
+import NotificationScreen from './src/screens/NotificationScreen';
+import CurrencyScreen from './src/screens/CurrencyScreen';
+import HelpSupportScreen from './src/screens/HelpSupportScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -45,13 +50,11 @@ const App = () => {
         justRegistered.current = false;
         setTimeout(() => {
           setShowToast(true);
-          // Fade in
           Animated.timing(fadeAnim, {
             toValue: 1,
             duration: 300,
             useNativeDriver: true,
           }).start(() => {
-            // Wait 2 seconds, then fade out
             setTimeout(() => {
               Animated.timing(fadeAnim, {
                 toValue: 0,
@@ -74,7 +77,7 @@ const App = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color="#1A3A6B" />
       </View>
     );
   }
@@ -135,14 +138,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FAF8F4',
   },
   toast: {
     position: 'absolute',
     top: 60,
     left: 24,
     right: 24,
-    backgroundColor: '#166534',
+    backgroundColor: '#2A8C5C',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 20,

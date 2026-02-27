@@ -42,7 +42,6 @@ const DS = {
   buttonHeight:  52,
   iconBox:       40,
   iconRadius:    12,
-  navFab:        56,
   navHeight:     80,
 };
 
@@ -50,21 +49,18 @@ const TAGS = ["All", "Food", "Bills", "Gas", "Shopping", "Medical", "Other"];
 
 // ─── Date Grouping Helper ────────────────────────────────────
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 function getDateGroup(dateStr) {
-  if (!dateStr) return "Other";
+  if (!dateStr) return "Unknown Date";
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const thisWeekStart = new Date(today);
-  thisWeekStart.setDate(thisWeekStart.getDate() - thisWeekStart.getDay());
-  const lastWeekStart = new Date(thisWeekStart);
-  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const receiptDate = new Date(dateStr);
-  if (isNaN(receiptDate.getTime())) return "Other";
+  if (isNaN(receiptDate.getTime())) return "Unknown Date";
 
   const receiptDay = new Date(
     receiptDate.getFullYear(),
@@ -74,30 +70,45 @@ function getDateGroup(dateStr) {
 
   if (receiptDay.getTime() === today.getTime()) return "Today";
   if (receiptDay.getTime() === yesterday.getTime()) return "Yesterday";
-  if (receiptDay >= thisWeekStart && receiptDay < yesterday) return "This Week";
-  if (receiptDay >= lastWeekStart && receiptDay < thisWeekStart) return "Last Week";
-  if (receiptDay >= thisMonthStart && receiptDay < lastWeekStart) return "This Month";
-  return "Earlier";
-}
 
-const GROUP_ORDER = ["Today", "Yesterday", "This Week", "Last Week", "This Month", "Earlier", "Other"];
+  // Show actual date for everything else: "Jan 29, 2026"
+  return `${MONTHS[receiptDate.getMonth()]} ${receiptDate.getDate()}, ${receiptDate.getFullYear()}`;
+}
 
 function groupReceipts(receipts) {
   const groups = {};
+  const groupDates = {}; // track actual Date for sorting
+
   receipts.forEach((r) => {
-    const group = getDateGroup(r.date);
-    if (!groups[group]) groups[group] = [];
+    const group = getDateGroup(r.date || r.created_at);
+    if (!groups[group]) {
+      groups[group] = [];
+      // Store the date for sorting (Today = today, Yesterday = yesterday, else parse)
+      const d = new Date(r.date || r.created_at);
+      groupDates[group] = isNaN(d.getTime()) ? new Date(0) : d;
+    }
     groups[group].push(r);
   });
 
+  // Sort group keys: Today first, Yesterday second, then by date descending
+  const sortedKeys = Object.keys(groups).sort((a, b) => {
+    if (a === "Today") return -1;
+    if (b === "Today") return 1;
+    if (a === "Yesterday") return -1;
+    if (b === "Yesterday") return 1;
+    if (a === "Unknown Date") return 1;
+    if (b === "Unknown Date") return -1;
+    // Sort by actual date descending (newest first)
+    return (groupDates[b]?.getTime() || 0) - (groupDates[a]?.getTime() || 0);
+  });
+
+  // Build flat list with section headers
   const sections = [];
-  GROUP_ORDER.forEach((groupName) => {
-    if (groups[groupName] && groups[groupName].length > 0) {
-      sections.push({ type: "header", title: groupName, id: `header-${groupName}` });
-      groups[groupName].forEach((r) => {
-        sections.push({ type: "receipt", data: r, id: r.id });
-      });
-    }
+  sortedKeys.forEach((groupName) => {
+    sections.push({ type: "header", title: groupName, id: `header-${groupName}` });
+    groups[groupName].forEach((r) => {
+      sections.push({ type: "receipt", data: r, id: r.id });
+    });
   });
   return sections;
 }
@@ -150,8 +161,10 @@ function DateRangeModal({ visible, onClose, selected, onSelect }) {
 function ReceiptRow({ item, onPress }) {
   const scale = useRef(new Animated.Value(1)).current;
 
+  // Format amount with $ sign
   const amount = `$${parseFloat(item.total_amount || 0).toFixed(2)}`;
 
+  // Format date for display
   const formatTime = (dateStr) => {
     if (!dateStr) return "";
     const d = new Date(dateStr);
@@ -159,6 +172,7 @@ function ReceiptRow({ item, onPress }) {
     return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   };
 
+  // Category icon mapping
   const getCategoryIcon = (cat) => {
     switch ((cat || "").toLowerCase()) {
       case "food": return "restaurant-outline";
@@ -170,6 +184,7 @@ function ReceiptRow({ item, onPress }) {
     }
   };
 
+  // Category color mapping
   const getCategoryColor = (cat) => {
     switch ((cat || "").toLowerCase()) {
       case "food": return "#E8A020";
@@ -183,7 +198,7 @@ function ReceiptRow({ item, onPress }) {
 
   const iconName = getCategoryIcon(item.category);
   const iconColor = getCategoryColor(item.category);
-  const iconBg = iconColor + "18";
+  const iconBg = iconColor + "18"; // 18 = ~10% opacity hex
 
   return (
     <TouchableOpacity
@@ -240,64 +255,9 @@ function EmptyState({ hasFilters }) {
   );
 }
 
-// ─── Bottom Nav (same as HomeScreen) ─────────────────────────
-
-function BottomNav({ activeTab, onTabPress }) {
-  const scanScale = useRef(new Animated.Value(1)).current;
-  const tabs = [
-    { key: "Home", icon: "home", label: "Home", lib: "feather" },
-    { key: "Receipts", icon: "file-text", label: "Receipts", lib: "feather" },
-    { key: "Scan", icon: "scan-outline", label: "", lib: "ionicons" },
-    { key: "AIChat", icon: "chatbubble-ellipses-outline", label: "AI Chat", lib: "ionicons" },
-    { key: "Settings", icon: "sliders", label: "Settings", lib: "feather" },
-  ];
-
-  return (
-    <View style={styles.bottomNav}>
-      {tabs.map((tab) => {
-        if (tab.key === "Scan") {
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={styles.scanOuter}
-              activeOpacity={1}
-              onPressIn={() =>
-                Animated.spring(scanScale, { toValue: 0.85, useNativeDriver: true, speed: 50 }).start()
-              }
-              onPressOut={() =>
-                Animated.spring(scanScale, { toValue: 1, useNativeDriver: true, speed: 25, bounciness: 12 }).start()
-              }
-              onPress={() => onTabPress(tab.key)}
-            >
-              <Animated.View style={[styles.scanBtn, { transform: [{ scale: scanScale }] }]}>
-                <Ionicons name="scan-outline" size={24} color={DS.accentGold} />
-              </Animated.View>
-            </TouchableOpacity>
-          );
-        }
-        const active = activeTab === tab.key;
-        const IconComponent = tab.lib === "ionicons" ? Ionicons : Icon;
-        return (
-          <TouchableOpacity
-            key={tab.key}
-            style={styles.navTab}
-            onPress={() => onTabPress(tab.key)}
-            activeOpacity={0.6}
-          >
-            <IconComponent name={tab.icon} size={20} color={active ? DS.brandNavy : DS.textSecondary} />
-            <Text style={[styles.navLabel, { color: active ? DS.brandNavy : DS.textSecondary }]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
 // ─── Main Screen ─────────────────────────────────────────────
 
-export default function ReceiptScreen({ navigation }) {
+export default function ReceiptsScreen({ navigation }) {
   const [receipts, setReceipts] = useState([]);
   const [searchText, setSearchText] = useState("");
   const [activeTag, setActiveTag] = useState("All");
@@ -335,12 +295,15 @@ export default function ReceiptScreen({ navigation }) {
   // ── Filter logic ──
   const filteredReceipts = useMemo(() => {
     return receipts.filter((r) => {
+      // Search filter
       const matchesSearch =
         searchText === "" ||
         (r.store_name || "").toLowerCase().includes(searchText.toLowerCase());
 
+      // Category filter
       const matchesTag = activeTag === "All" || r.category === activeTag;
 
+      // Date range filter
       let matchesDate = true;
       if (dateRange !== "all" && r.date) {
         const now = new Date();
@@ -389,12 +352,20 @@ export default function ReceiptScreen({ navigation }) {
     });
   }, [receipts, searchText, activeTag, dateRange]);
 
+  // ── Group into sections ──
   const sections = useMemo(() => groupReceipts(filteredReceipts), [filteredReceipts]);
 
   const hasFilters = searchText !== "" || activeTag !== "All" || dateRange !== "all";
 
+  // ── Get date range label ──
   const dateRangeLabel = DATE_RANGES.find((r) => r.value === dateRange)?.label || "All Time";
 
+  // ── Receipt count summary ──
+  const totalAmount = filteredReceipts
+    .reduce((sum, r) => sum + parseFloat(r.total_amount || 0), 0)
+    .toFixed(2);
+
+  // ── Render ──
   const renderItem = ({ item }) => {
     if (item.type === "header") {
       return (
@@ -418,6 +389,12 @@ export default function ReceiptScreen({ navigation }) {
       {/* ── Header ── */}
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Receipts</Text>
+        <View style={styles.headerRight}>
+          <Text style={styles.receiptCount}>
+            {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? "s" : ""}
+          </Text>
+          <Text style={styles.totalBadge}>${totalAmount}</Text>
+        </View>
       </View>
 
       {/* ── Search Bar ── */}
@@ -440,7 +417,7 @@ export default function ReceiptScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Filter Row: Tags ── */}
+      {/* ── Filter Row: Tags + Date Range ── */}
       <View style={styles.filterRow}>
         <FlatList
           horizontal
@@ -505,16 +482,6 @@ export default function ReceiptScreen({ navigation }) {
         refreshing={loading}
       />
 
-      {/* ── Bottom Nav ── */}
-      <BottomNav
-        activeTab="Receipts"
-        onTabPress={(tab) => {
-          if (tab !== "Receipts") {
-            navigation.navigate(tab);
-          }
-        }}
-      />
-
       {/* ── Date Range Modal ── */}
       <DateRangeModal
         visible={dateModalVisible}
@@ -548,6 +515,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: DS.textPrimary,
     letterSpacing: -0.3,
+  },
+  headerRight: {
+    alignItems: "flex-end",
+  },
+  receiptCount: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: DS.textSecondary,
+  },
+  totalBadge: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: DS.brandNavy,
+    marginTop: 1,
   },
 
   // ── Search ──
@@ -760,63 +741,6 @@ const styles = StyleSheet.create({
     color: DS.textSecondary,
     textAlign: "center",
     lineHeight: 20,
-  },
-
-  // ── Bottom Nav ──
-  bottomNav: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    height: DS.navHeight,
-    backgroundColor: DS.bgSurface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: Platform.OS === "ios" ? 6 : 0,
-    zIndex: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: DS.shadow,
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 1,
-        shadowRadius: 20,
-      },
-      android: { elevation: 8 },
-    }),
-  },
-  navTab: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 6,
-    minWidth: 48,
-  },
-  navLabel: {
-    fontSize: 11,
-    fontWeight: "400",
-    marginTop: 3,
-  },
-  scanOuter: {
-    marginTop: -26,
-  },
-  scanBtn: {
-    width: DS.navFab,
-    height: DS.navFab,
-    borderRadius: DS.navFab / 2,
-    backgroundColor: DS.brandNavy,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: DS.shadow,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 1,
-        shadowRadius: 16,
-      },
-      android: { elevation: 8 },
-    }),
   },
 
   // ── Modal ──
