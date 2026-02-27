@@ -53,14 +53,19 @@ Return ONLY valid JSON with this exact format:
 {
     "store_name": "Store Name",
     "date": "YYYY-MM-DD",
+    "subtotal": "0.00",
+    "tax": "0.00",
+    "discount": "0.00",
     "total_amount": "0.00",
+    "payment_method": "Cash|Credit Card|Debit Card|Unknown",
     "category": "Food|Bills|Gas|Shopping|Medical|Other",
     "items": [
         {"name": "Item name", "price": "0.00", "quantity": 1}
     ]
 }
 If you can't determine a field, use "Unknown" for strings and "0.00" for amounts.
-For category, pick the best match from: Food, Bills, Gas, Shopping, Medical, Other."""
+For category, pick the best match from: Food, Bills, Gas, Shopping, Medical, Other.
+For payment_method, look for keywords like VISA, Mastercard, AMEX, Debit, Cash, etc. If found, use the appropriate type. If unclear, use "Unknown"."""
             },
             {
                 "role": "user",
@@ -80,13 +85,43 @@ For category, pick the best match from: Food, Bills, Gas, Shopping, Medical, Oth
     return json.loads(reply)
 
 
+def check_duplicate(user_id, store_name, date, total_amount):
+    """Check if a duplicate receipt already exists for this user."""
+    # Query Supabase for matching receipts
+    params = {
+        "user_id": f"eq.{user_id}",
+        "store_name": f"eq.{store_name}",
+        "date": f"eq.{date}",
+        "total_amount": f"eq.{total_amount}",
+    }
+
+    response = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/receipts",
+        headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+        },
+        params=params,
+    )
+
+    if response.status_code == 200:
+        results = response.json()
+        return len(results) > 0
+    return False
+
+
 def save_to_supabase(receipt_data, image_url, user_id):
     """Save extracted receipt data to Supabase."""
     row = {
         "user_id": user_id,
         "store_name": receipt_data.get("store_name", "Unknown"),
         "date": receipt_data.get("date", "Unknown"),
+        "subtotal": receipt_data.get("subtotal", "0.00"),
+        "tax": receipt_data.get("tax", "0.00"),
+        "discount": receipt_data.get("discount", "0.00"),
         "total_amount": receipt_data.get("total_amount", "0.00"),
+        "payment_method": receipt_data.get("payment_method", "Unknown"),
         "category": receipt_data.get("category", "Other"),
         "items": receipt_data.get("items", []),
         "raw_text": receipt_data.get("raw_text", ""),
@@ -125,7 +160,6 @@ def upload_image_to_supabase(image_bytes, filename):
     )
 
     if response.status_code in [200, 201]:
-        # Return the path (not full URL since bucket is private)
         return f"receipt-images/{filename}"
     else:
         print(f"Upload error: {response.status_code} - {response.text}")
@@ -144,6 +178,9 @@ def process_receipt():
         user_id = request.form.get("user_id")
         if not user_id:
             return jsonify({"error": "No user_id provided"}), 400
+
+        # Check if this is a forced save (bypass duplicate check)
+        force_save = request.form.get("force_save", "false") == "true"
 
         image_file = request.files["image"]
         image_bytes = image_file.read()
@@ -169,12 +206,63 @@ def process_receipt():
         receipt_data["raw_text"] = raw_text
         print(f"✅ Extracted: {receipt_data.get('store_name')} - ${receipt_data.get('total_amount')}")
 
-        # Step 4: Save to Supabase Database
+        # Step 4: Check for duplicates (unless force_save)
+        if not force_save:
+            is_duplicate = check_duplicate(
+                user_id,
+                receipt_data.get("store_name", "Unknown"),
+                receipt_data.get("date", "Unknown"),
+                receipt_data.get("total_amount", "0.00"),
+            )
+
+            if is_duplicate:
+                print("⚠️ Duplicate receipt detected!")
+                return jsonify({
+                    "success": False,
+                    "duplicate": True,
+                    "receipt_data": receipt_data,
+                    "image_path": image_path,
+                    "message": "Duplicate receipt detected",
+                }), 200
+
+        # Step 5: Save to Supabase Database
         print("💾 Saving to Supabase...")
         saved = save_to_supabase(receipt_data, image_path, user_id)
 
         if saved:
             print("🎉 Receipt processed successfully!")
+            return jsonify({
+                "success": True,
+                "receipt": saved[0] if isinstance(saved, list) else saved,
+            }), 200
+        else:
+            return jsonify({"error": "Failed to save to database"}), 500
+
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/force-save-receipt", methods=["POST"])
+def force_save_receipt():
+    """Save a receipt that was flagged as duplicate (user chose Save Anyway)."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        user_id = data.get("user_id")
+        receipt_data = data.get("receipt_data")
+        image_path = data.get("image_path")
+
+        if not user_id or not receipt_data:
+            return jsonify({"error": "Missing required fields"}), 400
+
+        print(f"💾 Force saving duplicate receipt for user: {user_id}")
+        saved = save_to_supabase(receipt_data, image_path, user_id)
+
+        if saved:
+            print("🎉 Duplicate receipt force-saved successfully!")
             return jsonify({
                 "success": True,
                 "receipt": saved[0] if isinstance(saved, list) else saved,

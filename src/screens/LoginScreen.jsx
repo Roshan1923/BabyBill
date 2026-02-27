@@ -41,6 +41,13 @@ const DS = {
   shadow:        "rgba(26,58,107,0.10)",
 };
 
+// Configure Google Sign-In with your Web Client ID
+// Configure Google Sign-In with your Web Client ID
+if (Platform.OS !== 'ios') {
+  GoogleSignin.configure({
+    webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+  });
+}
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
