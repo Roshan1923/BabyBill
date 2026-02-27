@@ -25,7 +25,7 @@ import CurrencyScreen from './src/screens/CurrencyScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 import { NotificationProvider } from './src/context/NotificationContext';
-import NotificationScreen from './src/screens/NotificationScreen';
+
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
