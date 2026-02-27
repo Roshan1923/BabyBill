@@ -157,13 +157,77 @@ function EmptyState({ hasFilters }) {
   );
 }
 
+// ─── Bottom Nav ──────────────────────────────────────────────
+
+function BottomNav({ activeTab, onTabPress }) {
+  const scanScale = useRef(new Animated.Value(1)).current;
+  const tabs = [
+    { key: "Home", icon: "home", label: "Home", lib: "feather" },
+    { key: "Receipts", icon: "file-text", label: "Receipts", lib: "feather" },
+    { key: "Scan", icon: "scan-outline", label: "", lib: "ionicons" },
+    { key: "AIChat", icon: "chatbubble-ellipses-outline", label: "AI Chat", lib: "ionicons" },
+    { key: "Settings", icon: "sliders", label: "Settings", lib: "feather" },
+  ];
+  return (
+    <View style={navStyles.bottomNav}>
+      {tabs.map((tab) => {
+        if (tab.key === "Scan") {
+          return (
+            <TouchableOpacity key={tab.key} style={navStyles.scanOuter} activeOpacity={1}
+              onPressIn={() => Animated.spring(scanScale, { toValue: 0.85, useNativeDriver: true, speed: 50 }).start()}
+              onPressOut={() => Animated.spring(scanScale, { toValue: 1, useNativeDriver: true, speed: 25, bounciness: 12 }).start()}
+              onPress={() => onTabPress(tab.key)}>
+              <Animated.View style={[navStyles.scanBtn, { transform: [{ scale: scanScale }] }]}>
+                <Ionicons name="scan-outline" size={24} color={DS.accentGold} />
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        }
+        const active = activeTab === tab.key;
+        const IconComp = tab.lib === "ionicons" ? Ionicons : Icon;
+        return (
+          <TouchableOpacity key={tab.key} style={navStyles.navTab} onPress={() => onTabPress(tab.key)} activeOpacity={0.6}>
+            <IconComp name={tab.icon} size={20} color={active ? DS.brandNavy : DS.textSecondary} />
+            <Text style={[navStyles.navLabel, { color: active ? DS.brandNavy : DS.textSecondary }]}>{tab.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+const navStyles = StyleSheet.create({
+  bottomNav: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-around",
+    height: 80, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 6 : 0, zIndex: 20,
+    backgroundColor: DS.bgSurface,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 1, shadowRadius: 20 },
+      android: { elevation: 8 },
+    }),
+  },
+  navTab: { alignItems: "center", justifyContent: "center", paddingVertical: 6, minWidth: 48 },
+  navLabel: { fontSize: 11, fontWeight: "400", marginTop: 3 },
+  scanOuter: { marginTop: -26 },
+  scanBtn: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: DS.brandNavy,
+    alignItems: "center", justifyContent: "center",
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 16 },
+      android: { elevation: 8 },
+    }),
+  },
+});
+
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function ReceiptsScreen({ navigation, route }) {
   // Tab state: "saved" or "review"
-  // Auto-switch to review tab if navigated from camera with pending items
   const initialTab = route?.params?.tab === 'review' ? 'review' : 'saved';
   const [viewTab, setViewTab] = useState(initialTab);
+  const [activeTab] = useState("Receipts");
 
   const [receipts, setReceipts] = useState([]);
   const [searchText, setSearchText] = useState("");
@@ -337,6 +401,9 @@ export default function ReceiptsScreen({ navigation, route }) {
       {/* ── Date Range Modal ── */}
       <DateRangeModal visible={dateModalVisible} onClose={() => setDateModalVisible(false)}
         selected={dateRange} onSelect={setDateRange} />
+
+      {/* ── Bottom Nav ── */}
+      <BottomNav activeTab={activeTab} onTabPress={(tab) => { if (tab !== "Receipts") navigation.navigate(tab); }} />
     </SafeAreaView>
   );
 }
