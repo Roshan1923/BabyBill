@@ -401,9 +401,50 @@ function DotIndicator({ count, activeIndex }) {
   );
 }
 
+// ─── Bottom Nav ──────────────────────────────────────────────
+
+function BottomNav({ activeTab, onTabPress }) {
+  const scanScale = useRef(new Animated.Value(1)).current;
+  const tabs = [
+    { key: "Home", icon: "home", label: "Home", lib: "feather" },
+    { key: "Receipts", icon: "file-text", label: "Receipts", lib: "feather" },
+    { key: "Scan", icon: "scan-outline", label: "", lib: "ionicons" },
+    { key: "AIChat", icon: "chatbubble-ellipses-outline", label: "AI Chat", lib: "ionicons" },
+    { key: "Settings", icon: "sliders", label: "Settings", lib: "feather" },
+  ];
+
+  return (
+    <View style={styles.bottomNav}>
+      {tabs.map((tab) => {
+        if (tab.key === "Scan") {
+          return (
+            <TouchableOpacity key={tab.key} style={styles.scanOuter} activeOpacity={1}
+              onPressIn={() => Animated.spring(scanScale, { toValue: 0.85, useNativeDriver: true, speed: 50 }).start()}
+              onPressOut={() => Animated.spring(scanScale, { toValue: 1, useNativeDriver: true, speed: 25, bounciness: 12 }).start()}
+              onPress={() => onTabPress(tab.key)}>
+              <Animated.View style={[styles.scanBtn, { transform: [{ scale: scanScale }] }]}>
+                <Ionicons name="scan-outline" size={24} color={DS.accentGold} />
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        }
+        const active = activeTab === tab.key;
+        const IconComp = tab.lib === "ionicons" ? Ionicons : Icon;
+        return (
+          <TouchableOpacity key={tab.key} style={styles.navTab} onPress={() => onTabPress(tab.key)} activeOpacity={0.6}>
+            <IconComp name={tab.icon} size={20} color={active ? DS.brandNavy : DS.textSecondary} />
+            <Text style={[styles.navLabel, { color: active ? DS.brandNavy : DS.textSecondary }]}>{tab.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function HomeScreen({ navigation }) {
+  const [activeTab, setActiveTab] = useState("Home");
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [period, setPeriod] = useState("Monthly");
   const [receipts, setReceipts] = useState([]);
@@ -489,6 +530,16 @@ export default function HomeScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+
+      <BottomNav
+        activeTab={activeTab}
+        onTabPress={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "Home") {
+            navigation.navigate(tab);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -595,4 +646,28 @@ const styles = StyleSheet.create({
   emptyIconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: DS.bgSurface2, alignItems: "center", justifyContent: "center", marginBottom: 12 },
   emptyTitle: { fontSize: 16, fontWeight: "600", color: DS.textPrimary, marginBottom: 4 },
   emptySubtitle: { fontSize: 13, color: DS.textSecondary, textAlign: "center" },
+
+  // Bottom nav
+  bottomNav: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-around",
+    height: DS.navHeight, backgroundColor: DS.bgSurface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 6 : 0, zIndex: 20,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: -4 }, shadowOpacity: 1, shadowRadius: 20 },
+      android: { elevation: 8 },
+    }),
+  },
+  navTab: { alignItems: "center", justifyContent: "center", paddingVertical: 6, minWidth: 48 },
+  navLabel: { fontSize: 11, fontWeight: "400", marginTop: 3 },
+  scanOuter: { marginTop: -26 },
+  scanBtn: {
+    width: DS.navFab, height: DS.navFab, borderRadius: DS.navFab / 2,
+    backgroundColor: DS.brandNavy, alignItems: "center", justifyContent: "center",
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 16 },
+      android: { elevation: 8 },
+    }),
+  },
 });
