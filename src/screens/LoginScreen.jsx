@@ -3,6 +3,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
+import QuickCrypto from 'react-native-quick-crypto';
 import {
   View,
   Text,
@@ -210,6 +211,28 @@ const LoginScreen = ({ navigation }) => {
       setAppleLoading(false);
     }
   };
+
+  const handleForgotPassword = async () => {
+    if (!emailOrUsername.trim() || !emailOrUsername.includes('@')) {
+      showModal('mail-outline', DS.accentGold, 'Enter Your Email', 'Please type your email address in the field above, then tap Forgot Password again.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(emailOrUsername.trim());
+      if (error) {
+        showModal('alert-circle', DS.negative, 'Error', error.message);
+      } else {
+        showModal('checkmark-circle', DS.positive, 'Check Your Email', 'A password reset link has been sent to your email.');
+      }
+    } catch (err) {
+      showModal('alert-circle', DS.negative, 'Error', 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ─── Render ──────────────────────────────────────────────────
 
   return (
