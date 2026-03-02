@@ -34,11 +34,11 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>BabyBill needs camera access to scan receipts and documents</string>
+	<string>BillBrain needs camera access to scan receipts and documents</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>BabyBill needs photo library access to import receipts</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>BillBrain needs photo library access to import receipts</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>BillBrain needs to save scanned receipt photos to your library</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -58,6 +58,8 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>Ionicons.ttf</string>
+		<string>Feather.ttf</string>
+
 		<string>FontAwesome.ttf</string>
 	</array>
 	<key>CFBundleIconName</key>

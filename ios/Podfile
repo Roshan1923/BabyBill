@@ -1,4 +1,3 @@
-# Resolve react_native_pods.rb with node to allow for hoisting
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "react-native/scripts/react_native_pods.rb",
@@ -7,6 +6,14 @@ require Pod::Executable.execute_command('node', ['-p',
 
 platform :ios, '15.1'
 prepare_react_native_project!
+
+# react-native-permissions setup
+def node_require(script)
+  require Pod::Executable.execute_command('node', ['-p',
+    "require.resolve('#{script}', {paths: [process.argv[1]]})", __dir__]).strip
+end
+node_require('react-native-permissions/scripts/setup.rb')
+setup_permissions(['Camera', 'PhotoLibrary'])
 
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
@@ -19,7 +26,6 @@ target 'BabyBillV2' do
 
   use_react_native!(
     :path => config[:reactNativePath],
-    # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
@@ -28,7 +34,6 @@ target 'BabyBillV2' do
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
-      # :ccache_enabled => true
     )
   end
 end
