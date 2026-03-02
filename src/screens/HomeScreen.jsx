@@ -322,8 +322,9 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
 }
 
 // ─── Action Buttons ──────────────────────────────────────────
-const { addJob } = useProcessing();
+
 function ActionButtons({ navigation }) {
+  const { addJob } = useProcessing();
   const uploadScale = useRef(new Animated.Value(1)).current;
   const manualScale = useRef(new Animated.Value(1)).current;
   const uploadOpacity = useRef(new Animated.Value(1)).current;
