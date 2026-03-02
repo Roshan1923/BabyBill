@@ -324,7 +324,7 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
 // ─── Action Buttons ──────────────────────────────────────────
 
 function ActionButtons({ navigation }) {
-  const { addJob } = useProcessing();
+  const { processBatch } = useProcessing();
   const uploadScale = useRef(new Animated.Value(1)).current;
   const manualScale = useRef(new Animated.Value(1)).current;
   const uploadOpacity = useRef(new Animated.Value(1)).current;
@@ -338,7 +338,7 @@ function ActionButtons({ navigation }) {
       const asset = response.assets?.[0];
       if (asset?.uri) {
         const path = asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri;
-        addJob(path);
+        processBatch([{ id: `upload_${Date.now()}`, photoPath: path }]);
       }
     });
   };
