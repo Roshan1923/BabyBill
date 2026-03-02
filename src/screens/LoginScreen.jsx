@@ -3,6 +3,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
+import QuickCrypto from 'react-native-quick-crypto';
 import {
   View,
   Text,
@@ -46,13 +47,13 @@ const DS = {
   shadow:        "rgba(26,58,107,0.10)",
 };
 
-
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   // Animations
   const loginScale = useRef(new Animated.Value(1)).current;
@@ -152,36 +153,49 @@ const LoginScreen = ({ navigation }) => {
 
   const handleAppleSignIn = async () => {
     try {
-      setLoading(true);
-      
+      setAppleLoading(true);
+
+      // Generate cryptographically secure random nonce
+      const randomBytes = QuickCrypto.randomBytes(32);
+      const rawNonce = Array.from(new Uint8Array(randomBytes))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      // SHA256 hash for Apple
+      const hash = QuickCrypto.createHash('sha256');
+      hash.update(rawNonce);
+      const hashedNonce = hash.digest('hex');
+
       const appleAuthResponse = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+        nonce: hashedNonce,
       });
-  
+
       const credentialState = await appleAuth.getCredentialStateForUser(appleAuthResponse.user);
       if (credentialState !== appleAuth.State.AUTHORIZED) {
         showModal('alert-circle', DS.negative, 'Error', 'Apple authorization failed.');
-        setLoading(false);
+        setAppleLoading(false);
         return;
       }
-  
+
       const { identityToken } = appleAuthResponse;
       if (!identityToken) {
         showModal('alert-circle', DS.negative, 'Error', 'Failed to get Apple ID token.');
-        setLoading(false);
+        setAppleLoading(false);
         return;
       }
-  
+
+      // Pass raw nonce to Supabase — it hashes internally and compares
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: identityToken,
+        nonce: rawNonce,
       });
-  
+
       if (error) {
         showModal('alert-circle', DS.negative, 'Apple Sign-In Failed', error.message);
       }
-      // Success → App.jsx auth listener navigates automatically
     } catch (error) {
       if (error.code === appleAuth.Error.CANCELED) {
         // User cancelled
@@ -189,9 +203,10 @@ const LoginScreen = ({ navigation }) => {
         showModal('alert-circle', DS.negative, 'Error', error.message || 'Apple Sign-In failed.');
       }
     } finally {
-      setLoading(false);
+      setAppleLoading(false);
     }
   };
+
   const handleForgotPassword = async () => {
     if (!emailOrUsername.trim() || !emailOrUsername.includes('@')) {
       showModal('mail-outline', DS.accentGold, 'Enter Your Email', 'Please type your email address in the field above, then tap Forgot Password again.');
@@ -337,11 +352,18 @@ const LoginScreen = ({ navigation }) => {
                 onPressIn={() => animPress(appleScale)}
                 onPressOut={() => animRelease(appleScale)}
                 onPress={handleAppleSignIn}
+                disabled={appleLoading}
                 style={{ flex: 1 }}
               >
                 <Animated.View style={[styles.socialBtn, { transform: [{ scale: appleScale }] }]}>
-                  <Ionicons name="logo-apple" size={18} color={DS.textPrimary} />
-                  <Text style={styles.socialBtnText}>Apple</Text>
+                  {appleLoading ? (
+                    <ActivityIndicator size="small" color={DS.textPrimary} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-apple" size={18} color={DS.textPrimary} />
+                      <Text style={styles.socialBtnText}>Apple</Text>
+                    </>
+                  )}
                 </Animated.View>
               </TouchableOpacity>
             </View>
