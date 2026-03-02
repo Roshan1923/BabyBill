@@ -23,6 +23,7 @@ import ProfileEditScreen from './src/screens/ProfileEditScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import CurrencyScreen from './src/screens/CurrencyScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import ExportScreen from './src/screens/ExportScreen';
 import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 import { NotificationProvider } from './src/context/NotificationContext';
 
@@ -103,6 +104,11 @@ const App = () => {
                         component={ManualEntryScreen}
                         options={{ animation: 'slide_from_right' }}
                       />
+                      <Stack.Screen
+                      name="Settings"
+                      component={SettingsScreen}
+                      options={{ animation: 'slide_from_right' }}
+                       />
                       <Stack.Screen 
                       name="ReviewReceipt" 
                       component={ReviewReceiptScreen} 
@@ -113,6 +119,26 @@ const App = () => {
                       component={ScanGalleryScreen}
                       options={{ animation: 'slide_from_left' }}
                       />
+                      <Stack.Screen
+                      name="ProfileEdit"
+                      component={ProfileEditScreen}
+                      options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
+                      name="CurrencyRegion"
+                      component={CurrencyScreen}
+                      options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
+                      name="HelpSupport"
+                      component={HelpSupportScreen}
+                      options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
+                      name="ExportDocuments"
+                      component={ExportScreen}
+                      options={{ animation: 'slide_from_right' }}
+                      />    
                       <Stack.Screen name="Notifications" component={NotificationScreen} />
                     </>
                   ) : (
