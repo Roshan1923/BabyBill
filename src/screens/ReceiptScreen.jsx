@@ -95,6 +95,27 @@ function DateRangeModal({ visible, onClose, selected, onSelect }) {
   );
 }
 
+// ─── Three-dot Menu Modal ────────────────────────────────────
+
+function MoreMenuModal({ visible, onClose, onExport }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={styles.menuContent}>
+          <TouchableOpacity
+            style={styles.menuOption}
+            onPress={() => { onClose(); onExport(); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="download-outline" size={18} color={DS.brandNavy} />
+            <Text style={styles.menuOptionText}>Export</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 function ReceiptRow({ item, onPress }) {
   const scale = useRef(new Animated.Value(1)).current;
   const amount = `$${parseFloat(item.total_amount || 0).toFixed(2)}`;
@@ -225,10 +246,10 @@ const navStyles = StyleSheet.create({
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function ReceiptsScreen({ navigation, route }) {
-  // Tab state: "saved" or "review"
   const initialTab = route?.params?.tab === 'review' ? 'review' : 'saved';
   const [viewTab, setViewTab] = useState(initialTab);
   const [activeTab] = useState("Receipts");
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const [receipts, setReceipts] = useState([]);
   const [searchText, setSearchText] = useState("");
@@ -237,7 +258,6 @@ export default function ReceiptsScreen({ navigation, route }) {
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Processing queue from context
   const { jobs, getReviewItems, getPendingCount, retryJob, forceSave, markReviewed } = useProcessing();
   const reviewItems = jobs.filter((j) => j.status !== 'reviewed');
   const hasReviewItems = reviewItems.length > 0;
@@ -254,7 +274,6 @@ export default function ReceiptsScreen({ navigation, route }) {
 
   useFocusEffect(useCallback(() => {
     fetchReceipts();
-    // Check if we should switch to review tab
     if (route?.params?.tab === 'review') {
       setViewTab('review');
     }
@@ -296,7 +315,6 @@ export default function ReceiptsScreen({ navigation, route }) {
   };
 
   const handleReviewPress = (item) => {
-    // Navigate to review screen — user must explicitly save
     if (item.receiptData) {
       navigation.navigate('ReviewReceipt', {
         jobId: item.id,
@@ -317,9 +335,16 @@ export default function ReceiptsScreen({ navigation, route }) {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* ── Header ── */}
+      {/* ── Header with 3-dot menu ── */}
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Receipts</Text>
+        <TouchableOpacity
+          style={styles.moreBtn}
+          onPress={() => setMenuVisible(true)}
+          activeOpacity={0.6}
+        >
+          <Ionicons name="ellipsis-vertical" size={20} color={DS.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* ── Tab Pills: Saved | To Review ── */}
@@ -343,7 +368,6 @@ export default function ReceiptsScreen({ navigation, route }) {
             <Text style={[styles.tabText, viewTab === 'review' && styles.tabTextActive]}>
               To Review
             </Text>
-            {/* Gold dot indicator */}
             {hasReviewItems && viewTab !== 'review' && (
               <View style={styles.dotIndicator} />
             )}
@@ -353,7 +377,6 @@ export default function ReceiptsScreen({ navigation, route }) {
 
       {/* ── Tab Content ── */}
       {viewTab === 'review' ? (
-        /* ── To Review Tab ── */
         <ToReviewReceipts
           items={reviewItems}
           onPressItem={handleReviewPress}
@@ -361,7 +384,6 @@ export default function ReceiptsScreen({ navigation, route }) {
           onForceSave={handleForceSave}
         />
       ) : (
-        /* ── Saved Tab (existing receipts UI) ── */
         <>
           <View style={styles.searchContainer}>
             <View style={styles.searchBar}>
@@ -410,6 +432,13 @@ export default function ReceiptsScreen({ navigation, route }) {
         </>
       )}
 
+      {/* ── More Menu Modal ── */}
+      <MoreMenuModal
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        onExport={() => navigation.navigate('Export')}
+      />
+
       {/* ── Date Range Modal ── */}
       <DateRangeModal visible={dateModalVisible} onClose={() => setDateModalVisible(false)}
         selected={dateRange} onSelect={setDateRange} />
@@ -423,10 +452,17 @@ export default function ReceiptsScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: DS.bgPage },
   header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: DS.pagePad, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12, paddingBottom: 4,
   },
   pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3 },
+  moreBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   // ── Tab Pills ──
   tabRow: {
@@ -449,7 +485,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   tabPillActive: {
-    backgroundColor: DS.bgSurface,
+    backgroundColor: DS.brandNavy,
     ...Platform.select({
       ios: {
         shadowColor: DS.shadow,
@@ -466,7 +502,7 @@ const styles = StyleSheet.create({
     color: DS.textSecondary,
   },
   tabTextActive: {
-    color: DS.textPrimary,
+    color: DS.textInverse,
   },
   dotIndicator: {
     position: 'absolute',
@@ -478,7 +514,45 @@ const styles = StyleSheet.create({
     backgroundColor: DS.accentGold,
   },
 
-  // ── Existing styles (unchanged) ──
+  // ── More Menu ──
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+  menuContent: {
+    position: "absolute",
+    top: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 50 : 60,
+    right: DS.pagePad,
+    backgroundColor: DS.bgSurface,
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    minWidth: 150,
+    ...Platform.select({
+      ios: {
+        shadowColor: DS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 16,
+      },
+      android: { elevation: 8 },
+    }),
+  },
+  menuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    gap: 10,
+    borderRadius: 8,
+  },
+  menuOptionText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: DS.textPrimary,
+  },
+
+  // ── Existing styles ──
   searchContainer: { paddingHorizontal: DS.pagePad, marginTop: 12 },
   searchBar: {
     flexDirection: "row", alignItems: "center", backgroundColor: DS.bgSurface, borderRadius: 14,
