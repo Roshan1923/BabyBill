@@ -219,7 +219,10 @@ export default function SettingsScreen({ navigation }) {
                 onPress={() => navigation.navigate("Notifications")} />
               <SettingsRow icon="globe-outline" iconLib="ionicons" iconColor="#2A8C5C"
                 label="Currency & Region" sublabel={`${countryDisplay} · ${currencyDisplay}`}
-                onPress={() => navigation.navigate("CurrencyRegion", { profile })} isLast />
+                onPress={() => navigation.navigate("CurrencyRegion", { profile })} />
+              <SettingsRow icon="download-outline" iconLib="ionicons" iconColor="#7C3AED"
+                label="Export Documents" sublabel="Download receipts as Excel"
+                onPress={() => navigation.navigate("ExportDocuments")} isLast />
             </View>
 
             {/* Support */}

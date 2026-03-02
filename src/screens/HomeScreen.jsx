@@ -12,12 +12,15 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
 import { launchImageLibrary } from "react-native-image-picker";
+
+const BillBrainIcon = require('../assets/logo.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -175,6 +178,7 @@ function formatReceiptTime(receipt) {
   const d = new Date(receipt.date || receipt.created_at);
   return isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+
 // ─── Header ──────────────────────────────────────────────────
 
 function HeaderRow({ userName = "Roshan" }) {
@@ -196,14 +200,14 @@ function HeaderRow({ userName = "Roshan" }) {
     outputRange: ["-18deg", "0deg", "18deg"],
   });
 
-  const initial = userName.charAt(0).toUpperCase();
-
   return (
     <View style={styles.headerRow}>
       <View style={styles.headerLeft}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
-        </View>
+        <Image
+          source={BillBrainIcon}
+          style={styles.avatarLogo}
+          resizeMode="contain"
+        />
         <View style={styles.headerTextBlock}>
           <Text style={styles.welcomeText}>Welcome back,</Text>
           <Text style={styles.userName}>{userName}</Text>
@@ -510,6 +514,7 @@ function DotIndicator({ count, activeIndex }) {
     </View>
   );
 }
+
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function HomeScreen({ navigation }) {
@@ -522,7 +527,6 @@ export default function HomeScreen({ navigation }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [profile, setProfile] = useState(null);
 
-  // Fetch all receipts from Supabase
   const fetchReceipts = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true);
@@ -534,7 +538,6 @@ export default function HomeScreen({ navigation }) {
         return;
       }
 
-      // Fetch profile for name
       const { data: profileData } = await supabase
         .from("profiles")
         .select("first_name, last_name")
@@ -555,7 +558,6 @@ export default function HomeScreen({ navigation }) {
 
       setReceipts(data || []);
 
-      // Count pending (status not completed)
       const pending = (data || []).filter(
         (r) => r.status && r.status.toLowerCase() === "pending"
       ).length;
@@ -576,7 +578,6 @@ export default function HomeScreen({ navigation }) {
 
   const onRefresh = useCallback(() => fetchReceipts(true), [fetchReceipts]);
 
-  // Derived data
   const topMerchants = useMemo(() => computeTopMerchants(receipts), [receipts]);
 
   const recentReceipts = useMemo(() => {
@@ -627,7 +628,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {/* Card carousel */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -645,7 +645,6 @@ export default function HomeScreen({ navigation }) {
             <PendingBar pendingCount={pendingCount} />
             <ActionButtons navigation={navigation} />
 
-            {/* Recent Receipts */}
             <View style={styles.receiptsSection}>
               <View style={styles.receiptsHeader}>
                 <Text style={styles.receiptsTitle}>Recent Receipts</Text>
@@ -690,6 +689,7 @@ export default function HomeScreen({ navigation }) {
     </SafeAreaView>
   );
 }
+
 // ─── Styles ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -705,11 +705,11 @@ const styles = StyleSheet.create({
   // Header
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLeft: { flexDirection: "row", alignItems: "center" },
-  avatar: {
-    width: DS.avatar, height: DS.avatar, borderRadius: DS.avatar / 2,
-    backgroundColor: DS.brandNavy, alignItems: "center", justifyContent: "center",
+  avatarLogo: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
   },
-  avatarText: { fontSize: 18, fontWeight: "700", color: DS.textInverse },
   headerTextBlock: { marginLeft: 10 },
   welcomeText: { fontSize: 12, fontWeight: "400", color: DS.textSecondary },
   userName: { fontSize: 16, fontWeight: "600", color: DS.textPrimary, marginTop: 1 },
@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
   },
 
   // Title
-  pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3, marginTop: 16, marginBottom: 12 },
+  pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3, marginTop: 2, marginBottom: 12 },
 
   // Loading
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },

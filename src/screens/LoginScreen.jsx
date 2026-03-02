@@ -16,8 +16,11 @@ import {
   StatusBar,
   SafeAreaView,
   Modal,
+  Image,
 } from 'react-native';
 import { supabase } from '../config/supabase';
+
+const BillBrainLogo = require('../assets/billbrain.png');
 
 GoogleSignin.configure({
   webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
@@ -41,13 +44,12 @@ const DS = {
   shadow:        "rgba(26,58,107,0.10)",
 };
 
-// Configure Google Sign-In with your Web Client ID
-// Configure Google Sign-In with your Web Client ID
 if (Platform.OS !== 'ios') {
   GoogleSignin.configure({
     webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
   });
 }
+
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -193,10 +195,11 @@ const LoginScreen = ({ navigation }) => {
         >
           {/* ── Brand Header ── */}
           <View style={styles.brandSection}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="receipt-outline" size={32} color={DS.textInverse} />
-            </View>
-            <Text style={styles.appName}>BillBrain</Text>
+            <Image
+              source={BillBrainLogo}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.tagline}>All Your Receipts. One Smart Brain.</Text>
           </View>
 
@@ -359,30 +362,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 32,
   },
-  logoCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: DS.brandNavy,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 24 },
-      android: { elevation: 6 },
-    }),
-  },
-  appName: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: DS.brandNavy,
-    letterSpacing: -0.5,
+  logoImage: {
+    width: 400,
+    height: 200,
+    marginBottom: 0,
   },
   tagline: {
     fontSize: 14,
     fontWeight: '400',
     color: DS.textSecondary,
-    marginTop: 6,
+    marginTop: -30,
   },
 
   // Card

@@ -21,6 +21,7 @@ import ProfileEditScreen from './src/screens/ProfileEditScreen';
 import NotificationScreen from './src/screens/NotificationScreen';
 import CurrencyScreen from './src/screens/CurrencyScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
+import ExportScreen from './src/screens/ExportScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -121,6 +122,11 @@ const App = () => {
               <Stack.Screen
                 name="HelpSupport"
                 component={HelpSupportScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="ExportDocuments"
+                component={ExportScreen}
                 options={{ animation: 'slide_from_right' }}
               />
             </>
