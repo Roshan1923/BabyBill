@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { appleAuth } from '@invertase/react-native-apple-authentication';
 import {
   View,
   Text,
@@ -24,6 +25,7 @@ const BillBrainLogo = require('../assets/billbrain.png');
 
 GoogleSignin.configure({
   webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+  iosClientId: '841045886628-8fpnck0rnopufc8pq62oidfiju85gfdd.apps.googleusercontent.com',
 });
 
 // ─── Design System ───────────────────────────────────────────
@@ -44,12 +46,6 @@ const DS = {
   shadow:        "rgba(26,58,107,0.10)",
 };
 
-if (Platform.OS !== 'ios') {
-  GoogleSignin.configure({
-    webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
-    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-  });
-}
 
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
@@ -155,9 +151,47 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleAppleSignIn = async () => {
-    showModal('information-circle', DS.brandBlue, 'Coming Soon', 'Apple Sign-In will be available in a future update.');
+    try {
+      setLoading(true);
+      
+      const appleAuthResponse = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+      });
+  
+      const credentialState = await appleAuth.getCredentialStateForUser(appleAuthResponse.user);
+      if (credentialState !== appleAuth.State.AUTHORIZED) {
+        showModal('alert-circle', DS.negative, 'Error', 'Apple authorization failed.');
+        setLoading(false);
+        return;
+      }
+  
+      const { identityToken } = appleAuthResponse;
+      if (!identityToken) {
+        showModal('alert-circle', DS.negative, 'Error', 'Failed to get Apple ID token.');
+        setLoading(false);
+        return;
+      }
+  
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: identityToken,
+      });
+  
+      if (error) {
+        showModal('alert-circle', DS.negative, 'Apple Sign-In Failed', error.message);
+      }
+      // Success → App.jsx auth listener navigates automatically
+    } catch (error) {
+      if (error.code === appleAuth.Error.CANCELED) {
+        // User cancelled
+      } else {
+        showModal('alert-circle', DS.negative, 'Error', error.message || 'Apple Sign-In failed.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
-
   const handleForgotPassword = async () => {
     if (!emailOrUsername.trim() || !emailOrUsername.includes('@')) {
       showModal('mail-outline', DS.accentGold, 'Enter Your Email', 'Please type your email address in the field above, then tap Forgot Password again.');
