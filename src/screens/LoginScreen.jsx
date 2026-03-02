@@ -3,7 +3,6 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
-import QuickCrypto from 'react-native-quick-crypto';
 import {
   View,
   Text,
@@ -154,47 +153,52 @@ const LoginScreen = ({ navigation }) => {
   const handleAppleSignIn = async () => {
     try {
       setAppleLoading(true);
-
-      // Generate cryptographically secure random nonce
-      const randomBytes = QuickCrypto.randomBytes(32);
-      const rawNonce = Array.from(new Uint8Array(randomBytes))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      // SHA256 hash for Apple
-      const hash = QuickCrypto.createHash('sha256');
-      hash.update(rawNonce);
-      const hashedNonce = hash.digest('hex');
-
+  
+      // Generate a raw nonce — apple-auth lib hashes it internally
+      const rawNonce = Math.random().toString(36).substring(2, 15) +
+        Math.random().toString(36).substring(2, 15);
+  
       const appleAuthResponse = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
-        nonce: hashedNonce,
+        nonce: rawNonce,
       });
-
+  
       const credentialState = await appleAuth.getCredentialStateForUser(appleAuthResponse.user);
       if (credentialState !== appleAuth.State.AUTHORIZED) {
         showModal('alert-circle', DS.negative, 'Error', 'Apple authorization failed.');
         setAppleLoading(false);
         return;
       }
-
-      const { identityToken } = appleAuthResponse;
+  
+      const { identityToken, fullName } = appleAuthResponse;
       if (!identityToken) {
         showModal('alert-circle', DS.negative, 'Error', 'Failed to get Apple ID token.');
         setAppleLoading(false);
         return;
       }
-
-      // Pass raw nonce to Supabase — it hashes internally and compares
+  
+      // Pass the SAME raw nonce to Supabase — it hashes and compares internally
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
         token: identityToken,
         nonce: rawNonce,
       });
-
+  
       if (error) {
         showModal('alert-circle', DS.negative, 'Apple Sign-In Failed', error.message);
+        return;
+      }
+  
+      // Apple only gives full name on FIRST sign-in — save it to profile
+      if (fullName?.givenName || fullName?.familyName) {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: [fullName.givenName, fullName.familyName].filter(Boolean).join(' '),
+            given_name: fullName.givenName,
+            family_name: fullName.familyName,
+          },
+        });
       }
     } catch (error) {
       if (error.code === appleAuth.Error.CANCELED) {
@@ -206,28 +210,6 @@ const LoginScreen = ({ navigation }) => {
       setAppleLoading(false);
     }
   };
-
-  const handleForgotPassword = async () => {
-    if (!emailOrUsername.trim() || !emailOrUsername.includes('@')) {
-      showModal('mail-outline', DS.accentGold, 'Enter Your Email', 'Please type your email address in the field above, then tap Forgot Password again.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(emailOrUsername.trim());
-      if (error) {
-        showModal('alert-circle', DS.negative, 'Error', error.message);
-      } else {
-        showModal('checkmark-circle', DS.positive, 'Check Your Email', 'A password reset link has been sent to your email.');
-      }
-    } catch (err) {
-      showModal('alert-circle', DS.negative, 'Error', 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // ─── Render ──────────────────────────────────────────────────
 
   return (
