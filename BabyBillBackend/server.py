@@ -2,18 +2,53 @@ import os
 import json
 import base64
 import httpx
+import io
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 from openai import OpenAI
+from PIL import Image
+
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
+#-----------------------------------------------------------------------------------------------
+# ── Image compression (toggle off when Azure limit increases) ──
+COMPRESS_ENABLED = True
+COMPRESS_MAX_MB = 3.5
+COMPRESS_MAX_DIMENSION = 2500
+
+def compress_image(image_bytes):
+    """Compress image for Azure OCR 4MB limit. Set COMPRESS_ENABLED=False to disable."""
+    if not COMPRESS_ENABLED:
+        return image_bytes
+    if len(image_bytes) <= COMPRESS_MAX_MB * 1024 * 1024:
+        return image_bytes
+    
+    print(f"⚠️ Image too large ({len(image_bytes)} bytes), compressing...")
+    img = Image.open(io.BytesIO(image_bytes))
+    
+    if max(img.size) > COMPRESS_MAX_DIMENSION:
+        ratio = COMPRESS_MAX_DIMENSION / max(img.size)
+        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+        img = img.resize(new_size, Image.LANCZOS)
+    
+    for quality in [85, 70, 55, 40]:
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=quality)
+        compressed = buffer.getvalue()
+        if len(compressed) <= COMPRESS_MAX_MB * 1024 * 1024:
+            print(f"✅ Compressed to {len(compressed)} bytes (quality={quality})")
+            return compressed
+    
+    return compressed
+
+#-----------------------------------------------------------------------------------------------
 # --- Clients ---
 azure_client = DocumentAnalysisClient(
     endpoint=os.getenv("AZURE_ENDPOINT"),
@@ -87,7 +122,6 @@ For payment_method, look for keywords like VISA, Mastercard, AMEX, Debit, Cash, 
 
 def check_duplicate(user_id, store_name, date, total_amount):
     """Check if a duplicate receipt already exists for this user."""
-    # Query Supabase for matching receipts
     params = {
         "user_id": f"eq.{user_id}",
         "store_name": f"eq.{store_name}",
@@ -170,20 +204,18 @@ def upload_image_to_supabase(image_bytes, filename):
 def process_receipt():
     """Main endpoint: receives image, runs OCR + GPT, saves to Supabase."""
     try:
-        # Get image from request
         if "image" not in request.files:
             return jsonify({"error": "No image provided"}), 400
 
-        # Get user_id from request
         user_id = request.form.get("user_id")
         if not user_id:
             return jsonify({"error": "No user_id provided"}), 400
 
-        # Check if this is a forced save (bypass duplicate check)
         force_save = request.form.get("force_save", "false") == "true"
 
         image_file = request.files["image"]
         image_bytes = image_file.read()
+        image_bytes = compress_image(image_bytes)  # Compress for Azure 4MB limit
         filename = f"receipt_{int(__import__('time').time())}.jpg"
 
         print(f"📸 Received image: {len(image_bytes)} bytes")

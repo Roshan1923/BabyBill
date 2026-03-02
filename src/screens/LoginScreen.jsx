@@ -47,6 +47,7 @@ const DS = {
 if (Platform.OS !== 'ios') {
   GoogleSignin.configure({
     webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
   });
 }
 
