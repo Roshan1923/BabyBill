@@ -322,7 +322,7 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
 }
 
 // ─── Action Buttons ──────────────────────────────────────────
-
+const { addJob } = useProcessing();
 function ActionButtons({ navigation }) {
   const uploadScale = useRef(new Animated.Value(1)).current;
   const manualScale = useRef(new Animated.Value(1)).current;
@@ -337,7 +337,7 @@ function ActionButtons({ navigation }) {
       const asset = response.assets?.[0];
       if (asset?.uri) {
         const path = asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri;
-        navigation.navigate("Preview", { photoPath: path });
+        addJob(path);
       }
     });
   };
