@@ -203,7 +203,7 @@ export default function ScanScreen({ navigation }) {
     }).start();
   };
 
-  // ─── Gallery (fresh state only) ────────────────────────────
+  // ─── Gallery — multi-select supported ──────────────────────
   const handleGallery = async () => {
     const granted = await requestPermissionWithBlockedHandling(
       'photoLibrary',
@@ -214,17 +214,33 @@ export default function ScanScreen({ navigation }) {
     if (!granted) return;
 
     launchImageLibrary(
-      { mediaType: 'photo', quality: 1, maxWidth: 4000, maxHeight: 4000 },
+      { mediaType: 'photo', quality: 1, selectionLimit: 0 },
       (response) => {
         if (response.didCancel) return;
         if (response.errorCode) {
           showError('Gallery Error', response.errorMessage || 'Failed to pick image.');
           return;
         }
-        if (response.assets && response.assets[0]) {
-          const uri = response.assets[0].uri;
+        const assets = response.assets;
+        if (!assets || assets.length === 0) return;
+
+        if (assets.length === 1) {
+          // Single photo — show preview overlay for keep/retake
+          const uri = assets[0].uri;
           const path = uri.replace('file://', '');
-          setPreviewPhoto(path); // Show as overlay, not navigation
+          setPreviewPhoto(path);
+        } else {
+          // Multiple photos — skip preview, send all directly to processing
+          const batch = assets.map((asset, index) => ({
+            id: `gallery_${Date.now()}_${index}`,
+            photoPath: asset.uri.startsWith('file://')
+              ? asset.uri.replace('file://', '')
+              : asset.uri,
+          }));
+
+          setCommittedScans(batch);
+          setShowCommit(true);
+          processBatch(batch);
         }
       }
     );
@@ -387,7 +403,7 @@ export default function ScanScreen({ navigation }) {
             {/* Done button — only in accumulation state */}
             {hasScans && (
               <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.7}>
-                <Ionicons name="checkmark" size={20} color={DS.accentGold} />
+                <Ionicons name="checkmark" size={22} color="#fff" />
               </TouchableOpacity>
             )}
           </View>
@@ -503,6 +519,7 @@ export default function ScanScreen({ navigation }) {
 
       {/* ══════════════════════════════════════════════════════
           SCAN COMPLETE SHEET — bottom sheet after tapping Done
+          or after multi-gallery upload
          ══════════════════════════════════════════════════════ */}
       {showCommit && (
         <ScanCompleteSheet
@@ -666,8 +683,8 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: 'rgba(232, 160, 32, 0.18)', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(232, 160, 32, 0.35)',
+    backgroundColor: OVERLAY.btnBg, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: OVERLAY.btnBg,
   },
 
   // ─── Bottom Controls ─────────────────────────────────────

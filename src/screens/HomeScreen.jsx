@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
+  Alert,
 } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -22,6 +23,10 @@ import { supabase } from "../config/supabase";
 import { launchImageLibrary } from "react-native-image-picker";
 import { useProcessing } from "../context/ProcessingContext";
 import { useNotifications } from "../context/NotificationContext";
+import {
+  requestPermissionWithBlockedHandling,
+  openAppSettings,
+} from "../utils/permissions";
 
 const BillBrainIcon = require('../assets/logo.png');
 
@@ -54,7 +59,6 @@ const getCategoryIcon = (cat, categories) => {
     );
     if (match) return match.icon;
   }
-  // Fallback for default categories if user_categories hasn't loaded
   switch ((cat || "").toLowerCase()) {
     case "food": return "restaurant-outline";
     case "bills": return "document-text-outline";
@@ -72,7 +76,6 @@ const getCategoryColor = (cat, categories) => {
     );
     if (match) return match.color;
   }
-  // Fallback for default categories if user_categories hasn't loaded
   switch ((cat || "").toLowerCase()) {
     case "food": return "#E8A020";
     case "bills": return "#2563C8";
@@ -152,7 +155,6 @@ function HeaderRow({ userName = "User", navigation }) {
   };
 
   const bellRotate = bellAnim.interpolate({ inputRange: [-1, 0, 1], outputRange: ["-18deg", "0deg", "18deg"] });
-  const initial = userName.charAt(0).toUpperCase();
 
   return (
     <View style={styles.headerRow}>
@@ -194,6 +196,7 @@ function HeaderRow({ userName = "User", navigation }) {
 
 function SpendingCard({ receipts, period, onPeriodChange }) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [amountVisible, setAmountVisible] = useState(true);
   const periods = ["Weekly", "Monthly", "Yearly"];
   const data = useMemo(() => computeSpendingData(receipts, period), [receipts, period]);
   const isUp = data.changeDirection === "up";
@@ -214,7 +217,22 @@ function SpendingCard({ receipts, period, onPeriodChange }) {
           ))}
         </View>
         <Text style={styles.spendLabel}>Total Spending</Text>
-        <Text style={styles.spendAmount}>{data.total}</Text>
+        <View style={styles.amountRow}>
+          <Text style={styles.spendAmount}>
+            {amountVisible ? data.total : '••••••'}
+          </Text>
+          <TouchableOpacity
+            onPress={() => setAmountVisible(!amountVisible)}
+            activeOpacity={0.6}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons
+              name={amountVisible ? 'eye-outline' : 'eye-off-outline'}
+              size={18}
+              color={DS.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
         <View style={styles.cardMetaRow}>
           <View style={styles.metaItem}>
             <Ionicons name="document-text-outline" size={14} color={DS.brandNavy} />
@@ -289,7 +307,6 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
     );
   }
 
-  // Show most urgent status
   if (readyJobs > 0) {
     return (
       <TouchableOpacity
@@ -354,15 +371,39 @@ function ActionButtons({ navigation }) {
   const pressIn = (s, o) => { Animated.parallel([Animated.spring(s, { toValue: 0.94, useNativeDriver: true, speed: 50 }), Animated.timing(o, { toValue: 0.75, duration: 80, useNativeDriver: true })]).start(); };
   const pressOut = (s, o) => { Animated.parallel([Animated.spring(s, { toValue: 1, useNativeDriver: true, speed: 35, bounciness: 8 }), Animated.timing(o, { toValue: 1, duration: 150, useNativeDriver: true })]).start(); };
 
-  const handleUpload = () => {
-    launchImageLibrary({ mediaType: "photo", quality: 1, selectionLimit: 1 }, (response) => {
-      if (response.didCancel || response.errorCode) return;
-      const asset = response.assets?.[0];
-      if (asset?.uri) {
-        const path = asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri;
-        processBatch([{ id: `upload_${Date.now()}`, photoPath: path }]);
+  const handleUpload = async () => {
+    const granted = await requestPermissionWithBlockedHandling(
+      'photoLibrary',
+      ({ title, message, showSettingsButton }) => {
+        if (showSettingsButton) {
+          Alert.alert(title, message, [
+            { text: 'Cancel' },
+            { text: 'Settings', onPress: openAppSettings },
+          ]);
+        } else {
+          Alert.alert(title, message);
+        }
       }
-    });
+    );
+    if (!granted) return;
+
+    launchImageLibrary(
+      { mediaType: "photo", quality: 1, selectionLimit: 0 },
+      (response) => {
+        if (response.didCancel || response.errorCode) return;
+        const assets = response.assets;
+        if (assets && assets.length > 0) {
+          const batch = assets.map((asset, index) => ({
+            id: `upload_${Date.now()}_${index}`,
+            photoPath: asset.uri.startsWith("file://")
+              ? asset.uri.replace("file://", "")
+              : asset.uri,
+          }));
+          processBatch(batch);
+          navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
+        }
+      }
+    );
   };
 
   return (
@@ -493,7 +534,6 @@ export default function HomeScreen({ navigation }) {
         .single();
       if (profileData) setProfile(profileData);
 
-      // Fetch user categories for dynamic icon/color lookup
       const { data: catData } = await supabase
         .from("user_categories")
         .select("name, icon, color")
@@ -623,7 +663,6 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontSize: 10, fontWeight: "800", color: DS.textInverse },
 
-  // Title
   pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3, marginTop: 2, marginBottom: 12 },
 
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
@@ -643,7 +682,8 @@ const styles = StyleSheet.create({
   periodTxt: { fontSize: 12, fontWeight: "600", color: DS.textSecondary },
   periodTxtActive: { color: DS.textInverse },
   spendLabel: { fontSize: 12, fontWeight: "400", color: DS.textSecondary, marginTop: 12 },
-  spendAmount: { fontSize: 34, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.5, marginTop: 2 },
+  amountRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
+  spendAmount: { fontSize: 34, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.5 },
   cardMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 10 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   metaText: { fontSize: 12, fontWeight: "500", color: DS.textSecondary },
@@ -701,7 +741,6 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: "600", color: DS.textPrimary, marginBottom: 4 },
   emptySubtitle: { fontSize: 13, color: DS.textSecondary, textAlign: "center" },
 
-  // Bottom nav
   bottomNav: {
     position: "absolute", left: 0, right: 0, bottom: 0,
     flexDirection: "row", alignItems: "center", justifyContent: "space-around",
