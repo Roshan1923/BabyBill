@@ -23,7 +23,6 @@ const DS = {
   iconBox: 40, iconRadius: 12, navHeight: 80,
 };
 
-const TAGS = ["All", "Food", "Bills", "Gas", "Shopping", "Medical", "Other"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function getDateGroup(dateStr) {
@@ -95,28 +94,7 @@ function DateRangeModal({ visible, onClose, selected, onSelect }) {
   );
 }
 
-// ─── Three-dot Menu Modal ────────────────────────────────────
-
-function MoreMenuModal({ visible, onClose, onExport }) {
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.menuContent}>
-          <TouchableOpacity
-            style={styles.menuOption}
-            onPress={() => { onClose(); onExport(); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="download-outline" size={18} color={DS.brandNavy} />
-            <Text style={styles.menuOptionText}>Export</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-function ReceiptRow({ item, onPress }) {
+function ReceiptRow({ item, categories, onPress }) {
   const scale = useRef(new Animated.Value(1)).current;
   const amount = `$${parseFloat(item.total_amount || 0).toFixed(2)}`;
   const formatTime = (dateStr) => {
@@ -124,22 +102,10 @@ function ReceiptRow({ item, onPress }) {
     const d = new Date(dateStr);
     return isNaN(d.getTime()) ? dateStr : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   };
-  const getCategoryIcon = (cat) => {
-    switch ((cat || "").toLowerCase()) {
-      case "food": return "restaurant-outline"; case "bills": return "document-text-outline";
-      case "gas": return "car-outline"; case "shopping": return "bag-outline";
-      case "medical": return "medical-outline"; default: return "receipt-outline";
-    }
-  };
-  const getCategoryColor = (cat) => {
-    switch ((cat || "").toLowerCase()) {
-      case "food": return "#E8A020"; case "bills": return "#2563C8";
-      case "gas": return "#C8402A"; case "shopping": return "#7C3AED";
-      case "medical": return "#2A8C5C"; default: return "#8A7E72";
-    }
-  };
-  const iconName = getCategoryIcon(item.category);
-  const iconColor = getCategoryColor(item.category);
+
+  const catMatch = categories.find((c) => c.name.toLowerCase() === (item.category || "").toLowerCase());
+  const iconName = catMatch?.icon || "receipt-outline";
+  const iconColor = catMatch?.color || "#8A7E72";
 
   return (
     <TouchableOpacity activeOpacity={1}
@@ -249,16 +215,16 @@ export default function ReceiptsScreen({ navigation, route }) {
   const initialTab = route?.params?.tab === 'review' ? 'review' : 'saved';
   const [viewTab, setViewTab] = useState(initialTab);
   const [activeTab] = useState("Receipts");
-  const [menuVisible, setMenuVisible] = useState(false);
 
   const [receipts, setReceipts] = useState([]);
+  const [userCategories, setUserCategories] = useState([]);
   const [searchText, setSearchText] = useState("");
   const [activeTag, setActiveTag] = useState("All");
   const [dateRange, setDateRange] = useState("all");
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const { jobs, getReviewItems, getPendingCount, retryJob, forceSave, markReviewed } = useProcessing();
+  const { jobs, getReviewItems, getPendingCount, retryJob, forceSave, deleteJob, markReviewed } = useProcessing();
   const reviewItems = jobs.filter((j) => j.status !== 'reviewed');
   const hasReviewItems = reviewItems.length > 0;
 
@@ -272,12 +238,32 @@ export default function ReceiptsScreen({ navigation, route }) {
     finally { setLoading(false); }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("user_categories")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+      if (!error && data) setUserCategories(data);
+    } catch (err) {
+      console.error("Error fetching categories:", err);
+    }
+  };
+
   useFocusEffect(useCallback(() => {
     fetchReceipts();
+    fetchCategories();
     if (route?.params?.tab === 'review') {
       setViewTab('review');
     }
   }, [route?.params?.tab]));
+
+  const dynamicTags = useMemo(() => {
+    return ["All", ...userCategories.map((c) => c.name)];
+  }, [userCategories]);
 
   const filteredReceipts = useMemo(() => {
     return receipts.filter((r) => {
@@ -305,13 +291,12 @@ export default function ReceiptsScreen({ navigation, route }) {
   const sections = useMemo(() => groupReceipts(filteredReceipts), [filteredReceipts]);
   const hasFilters = searchText !== "" || activeTag !== "All" || dateRange !== "all";
   const dateRangeLabel = DATE_RANGES.find((r) => r.value === dateRange)?.label || "All Time";
-  const totalAmount = filteredReceipts.reduce((sum, r) => sum + parseFloat(r.total_amount || 0), 0).toFixed(2);
 
   const renderItem = ({ item }) => {
     if (item.type === "header") {
       return <View style={styles.sectionHeader}><Text style={styles.sectionHeaderText}>{item.title}</Text></View>;
     }
-    return <ReceiptRow item={item.data} onPress={() => navigation.navigate("Detail", { receipt: item.data })} />;
+    return <ReceiptRow item={item.data} categories={userCategories} onPress={() => navigation.navigate("Detail", { receipt: item.data })} />;
   };
 
   const handleReviewPress = (item) => {
@@ -323,8 +308,8 @@ export default function ReceiptsScreen({ navigation, route }) {
     }
   };
 
-  const handleRetry = (item) => {
-    retryJob(item.id);
+  const handleDelete = (item) => {
+    deleteJob(item.id);
   };
 
   const handleForceSave = (item) => {
@@ -335,19 +320,17 @@ export default function ReceiptsScreen({ navigation, route }) {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* ── Header with 3-dot menu ── */}
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Receipts</Text>
         <TouchableOpacity
-          style={styles.moreBtn}
-          onPress={() => setMenuVisible(true)}
-          activeOpacity={0.6}
+          style={styles.exportBtn}
+          onPress={() => navigation.navigate('ExportDocuments')}
+          activeOpacity={0.7}
         >
-          <Ionicons name="ellipsis-vertical" size={20} color={DS.textPrimary} />
+          <Icon name="upload" size={20} color={DS.brandNavy} />
         </TouchableOpacity>
       </View>
 
-      {/* ── Tab Pills: Saved | To Review ── */}
       <View style={styles.tabRow}>
         <View style={styles.tabContainer}>
           <TouchableOpacity
@@ -375,12 +358,11 @@ export default function ReceiptsScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* ── Tab Content ── */}
       {viewTab === 'review' ? (
         <ToReviewReceipts
           items={reviewItems}
           onPressItem={handleReviewPress}
-          onRetry={handleRetry}
+          onDelete={handleDelete}
           onForceSave={handleForceSave}
         />
       ) : (
@@ -399,7 +381,7 @@ export default function ReceiptsScreen({ navigation, route }) {
           </View>
 
           <View style={styles.filterRow}>
-            <FlatList horizontal showsHorizontalScrollIndicator={false} data={TAGS} keyExtractor={(item) => item}
+            <FlatList horizontal showsHorizontalScrollIndicator={false} data={dynamicTags} keyExtractor={(item) => item}
               contentContainerStyle={styles.tagsContainer}
               renderItem={({ item }) => {
                 const active = activeTag === item;
@@ -432,18 +414,9 @@ export default function ReceiptsScreen({ navigation, route }) {
         </>
       )}
 
-      {/* ── More Menu Modal ── */}
-      <MoreMenuModal
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        onExport={() => navigation.navigate('Export')}
-      />
-
-      {/* ── Date Range Modal ── */}
       <DateRangeModal visible={dateModalVisible} onClose={() => setDateModalVisible(false)}
         selected={dateRange} onSelect={setDateRange} />
 
-      {/* ── Bottom Nav ── */}
       <BottomNav activeTab={activeTab} onTabPress={(tab) => { if (tab !== "Receipts") navigation.navigate(tab); }} />
     </SafeAreaView>
   );
@@ -455,104 +428,29 @@ const styles = StyleSheet.create({
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: DS.pagePad, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12, paddingBottom: 4,
   },
-  pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3 },
-  moreBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // ── Tab Pills ──
-  tabRow: {
-    paddingHorizontal: DS.pagePad,
-    marginTop: 14,
-    marginBottom: 4,
-  },
+  pageTitle: { fontSize: 30, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3 },
+  exportBtn: { padding: 2 },
+  tabRow: { paddingHorizontal: DS.pagePad, marginTop: 14, marginBottom: 4 },
   tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: DS.bgSurface2,
-    borderRadius: 12,
-    padding: 3,
+    flexDirection: 'row', backgroundColor: DS.bgSurface2, borderRadius: 12, padding: 3,
   },
   tabPill: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
+    flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center',
+    justifyContent: 'center', position: 'relative',
   },
   tabPillActive: {
     backgroundColor: DS.brandNavy,
     ...Platform.select({
-      ios: {
-        shadowColor: DS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
-      },
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 6 },
       android: { elevation: 2 },
     }),
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: DS.textSecondary,
-  },
-  tabTextActive: {
-    color: DS.textInverse,
-  },
+  tabText: { fontSize: 14, fontWeight: '600', color: DS.textSecondary },
+  tabTextActive: { color: DS.textInverse },
   dotIndicator: {
-    position: 'absolute',
-    top: 6,
-    right: '25%',
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: DS.accentGold,
+    position: 'absolute', top: 6, right: '25%',
+    width: 7, height: 7, borderRadius: 4, backgroundColor: DS.accentGold,
   },
-
-  // ── More Menu ──
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.2)",
-  },
-  menuContent: {
-    position: "absolute",
-    top: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 50 : 60,
-    right: DS.pagePad,
-    backgroundColor: DS.bgSurface,
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    minWidth: 150,
-    ...Platform.select({
-      ios: {
-        shadowColor: DS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 1,
-        shadowRadius: 16,
-      },
-      android: { elevation: 8 },
-    }),
-  },
-  menuOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    gap: 10,
-    borderRadius: 8,
-  },
-  menuOptionText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: DS.textPrimary,
-  },
-
-  // ── Existing styles ──
   searchContainer: { paddingHorizontal: DS.pagePad, marginTop: 12 },
   searchBar: {
     flexDirection: "row", alignItems: "center", backgroundColor: DS.bgSurface, borderRadius: 14,
