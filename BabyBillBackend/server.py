@@ -113,6 +113,47 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # HTTP timeout for all Supabase calls (seconds)
 HTTP_TIMEOUT = 15.0
 
+# Fallback categories if fetching user categories fails
+DEFAULT_CATEGORIES = ["Food", "Bills", "Gas", "Shopping", "Medical", "Other"]
+
+
+#-----------------------------------------------------------------------------------------------
+# ── Fetch user categories ──
+
+def fetch_user_categories(user_id):
+    """Fetch the user's categories from the user_categories table."""
+    try:
+        response = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/user_categories",
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+            },
+            params={
+                "user_id": f"eq.{user_id}",
+                "select": "name",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            categories = response.json()
+            if categories and len(categories) > 0:
+                names = [cat["name"] for cat in categories]
+                print(f"📂 Fetched {len(names)} categories for user: {', '.join(names)}")
+                return names
+
+        print(f"⚠️ Could not fetch user categories (status {response.status_code}), using defaults")
+        return DEFAULT_CATEGORIES
+
+    except Exception as e:
+        print(f"⚠️ Error fetching user categories: {str(e)}, using defaults")
+        return DEFAULT_CATEGORIES
+
+
+#-----------------------------------------------------------------------------------------------
+# ── OCR + GPT ──
 
 def ocr_receipt(image_bytes):
     """Send image to Azure Document Intelligence and get raw text."""
@@ -129,16 +170,21 @@ def ocr_receipt(image_bytes):
     return raw_text
 
 
-def extract_with_gpt(raw_text):
+def extract_with_gpt(raw_text, category_names=None):
     """Send raw OCR text to GPT and get structured receipt data with payment details."""
+    if category_names is None:
+        category_names = DEFAULT_CATEGORIES
+
+    category_list = ", ".join(category_names)
+
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
-                "content": """You are a financial document parser. Extract structured data from document text.
+                "content": f"""You are a financial document parser. Extract structured data from document text.
 Return ONLY valid JSON with this exact format:
-{
+{{
     "store_name": "Store Name",
     "date": "YYYY-MM-DD",
     "subtotal": "0.00",
@@ -146,16 +192,16 @@ Return ONLY valid JSON with this exact format:
     "discount": "0.00",
     "total_amount": "0.00",
     "payment_method": "Visa ending 4521",
-    "category": "Food|Bills|Gas|Shopping|Medical|Other",
+    "category": "one of the categories listed below",
     "document_type": "receipt",
     "direction": "outgoing",
     "payment_status": "paid",
     "items": [
-        {"name": "Item name", "price": "0.00", "quantity": 1}
+        {{"name": "Item name", "price": "0.00", "quantity": 1}}
     ],
-    "payment_details": {
+    "payment_details": {{
         "methods": [
-            {
+            {{
                 "line_index": 0,
                 "raw_type": "credit",
                 "raw_network": "visa",
@@ -164,11 +210,11 @@ Return ONLY valid JSON with this exact format:
                 "amount": "45.67",
                 "auth_code": "087234",
                 "is_contactless": false
-            }
+            }}
         ],
         "payment_total": "45.67"
-    }
-}
+    }}
+}}
 
 EXISTING FIELD RULES:
 - total_amount: FINAL amount paid (after tax, after discounts). Look for "TOTAL", "AMOUNT DUE".
@@ -176,7 +222,7 @@ EXISTING FIELD RULES:
 - tax: Tax amount. Look for "TAX", "HST", "GST", "PST".
 - discount: Any discounts applied. "0.00" if none.
 - items: Extract ALL line items with prices.
-- category: Pick best match from Food, Bills, Gas, Shopping, Medical, Other.
+- category: Pick best match from: {category_list}. If none fit well, use "Other".
 - If you can't determine a field, use "Unknown" for strings and "0.00" for amounts.
 
 DOCUMENT TYPE DETECTION:
@@ -242,7 +288,7 @@ CASH:
 - Put full text in raw_text (e.g., "CASH TENDERED: $20.00 CHANGE: $1.47")
 
 NO PAYMENT INFO FOUND:
-- Return empty: "payment_details": {"methods": [], "payment_total": "0.00"}
+- Return empty: "payment_details": {{"methods": [], "payment_total": "0.00"}}
 
 BACKWARD COMPATIBILITY:
 - Always fill "payment_method" as a simple string too (e.g., "Visa ending 4521", "Cash", "Debit")"""
@@ -396,7 +442,7 @@ def save_receipt_payments(receipt_id, user_id, payment_details):
 #-----------------------------------------------------------------------------------------------
 # ── Save to Supabase ──
 
-def save_to_supabase(receipt_data, image_url, user_id):
+def save_to_supabase(receipt_data, image_url, user_id, image_hash=None):
     """Save extracted receipt data to Supabase (receipts + receipt_payments)."""
     row = {
         "user_id": user_id,
@@ -417,6 +463,10 @@ def save_to_supabase(receipt_data, image_url, user_id):
         "direction": receipt_data.get("direction", "outgoing"),
         "payment_status": receipt_data.get("payment_status", "paid"),
     }
+
+    # Include image_hash if provided
+    if image_hash:
+        row["image_hash"] = image_hash
 
     response = httpx.post(
         f"{SUPABASE_URL}/rest/v1/receipts",
@@ -481,6 +531,9 @@ def process_receipt():
 
         force_save = request.form.get("force_save", "false") == "true"
 
+        # Get image hash from frontend (for storage)
+        image_hash = request.form.get("image_hash")
+
         image_file = request.files["image"]
         image_bytes = image_file.read()
         image_bytes = compress_image(image_bytes)  # Compress for Azure 4MB limit
@@ -488,6 +541,8 @@ def process_receipt():
 
         print(f"📸 Received image: {len(image_bytes)} bytes")
         print(f"👤 User ID: {user_id}")
+        if image_hash:
+            print(f"🔑 Image hash: {image_hash}")
 
         # Step 1: Upload image to Supabase Storage
         print("☁️ Uploading image to Supabase...")
@@ -495,14 +550,18 @@ def process_receipt():
         if not image_path:
             return jsonify({"error": "Failed to upload image"}), 500
 
-        # Step 2: Run Azure OCR
+        # Step 2: Fetch user's categories for GPT prompt
+        print("📂 Fetching user categories...")
+        user_categories = fetch_user_categories(user_id)
+
+        # Step 3: Run Azure OCR
         print("🔍 Running Azure OCR...")
         raw_text = ocr_receipt(image_bytes)
         print(f"📝 OCR extracted {len(raw_text)} characters")
 
-        # Step 3: Extract structured data with GPT
+        # Step 4: Extract structured data with GPT (using user's categories)
         print("🤖 Extracting data with GPT...")
-        receipt_data = extract_with_gpt(raw_text)
+        receipt_data = extract_with_gpt(raw_text, user_categories)
         receipt_data["raw_text"] = raw_text
         print(f"✅ Extracted: {receipt_data.get('store_name')} - ${receipt_data.get('total_amount')}")
         print(f"   📄 Type: {receipt_data.get('document_type')} | Direction: {receipt_data.get('direction')} | Status: {receipt_data.get('payment_status')}")
@@ -519,7 +578,7 @@ def process_receipt():
         else:
             print(f"   💳 Legacy: {receipt_data.get('payment_method', 'Unknown')}")
 
-        # Step 4: Check for duplicates (unless force_save)
+        # Step 5: Check for duplicates (unless force_save)
         if not force_save:
             is_duplicate = check_duplicate(
                 user_id,
@@ -538,9 +597,9 @@ def process_receipt():
                     "message": "Duplicate receipt detected",
                 }), 200
 
-        # Step 5: Save to Supabase Database (receipts + receipt_payments)
+        # Step 6: Save to Supabase Database (receipts + receipt_payments)
         print("💾 Saving to Supabase...")
-        saved = save_to_supabase(receipt_data, image_path, user_id)
+        saved = save_to_supabase(receipt_data, image_path, user_id, image_hash)
 
         if saved:
             print("🎉 Receipt processed successfully!")
@@ -567,12 +626,13 @@ def force_save_receipt():
         user_id = data.get("user_id")
         receipt_data = data.get("receipt_data")
         image_path = data.get("image_path")
+        image_hash = data.get("image_hash")
 
         if not user_id or not receipt_data:
             return jsonify({"error": "Missing required fields"}), 400
 
         print(f"💾 Force saving duplicate receipt for user: {user_id}")
-        saved = save_to_supabase(receipt_data, image_path, user_id)
+        saved = save_to_supabase(receipt_data, image_path, user_id, image_hash)
 
         if saved:
             print("🎉 Duplicate receipt force-saved successfully!")

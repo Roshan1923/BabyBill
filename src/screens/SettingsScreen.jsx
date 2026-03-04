@@ -223,6 +223,9 @@ export default function SettingsScreen({ navigation }) {
               <SettingsRow icon="download-outline" iconLib="ionicons" iconColor="#7C3AED"
                 label="Export Documents" sublabel="Download receipts as Excel"
                 onPress={() => navigation.navigate("ExportDocuments")} isLast />
+              <SettingsRow icon="pricetag-outline" iconLib="ionicons" iconColor="#E8A020"
+                label="Categories" sublabel="Manage receipt categories"
+                onPress={() => navigation.navigate("Categories")} isLast />
             </View>
 
             {/* Support */}

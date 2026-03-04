@@ -43,26 +43,43 @@ const CARD_HEIGHT = 230;
 const CARD_GAP = 14;
 const RECENT_RECEIPT_LIMIT = 4;
 
-// ─── Category Helpers ────────────────────────────────────────
-const getCategoryIcon = (cat) => {
+// ─── Category Helpers (dynamic with fallback) ────────────────
+const FALLBACK_ICON = "receipt-outline";
+const FALLBACK_COLOR = "#8A7E72";
+
+const getCategoryIcon = (cat, categories) => {
+  if (categories && categories.length > 0) {
+    const match = categories.find(
+      (c) => c.name.toLowerCase() === (cat || "").toLowerCase()
+    );
+    if (match) return match.icon;
+  }
+  // Fallback for default categories if user_categories hasn't loaded
   switch ((cat || "").toLowerCase()) {
     case "food": return "restaurant-outline";
     case "bills": return "document-text-outline";
     case "gas": return "car-outline";
     case "shopping": return "bag-outline";
     case "medical": return "medical-outline";
-    default: return "receipt-outline";
+    default: return FALLBACK_ICON;
   }
 };
 
-const getCategoryColor = (cat) => {
+const getCategoryColor = (cat, categories) => {
+  if (categories && categories.length > 0) {
+    const match = categories.find(
+      (c) => c.name.toLowerCase() === (cat || "").toLowerCase()
+    );
+    if (match) return match.color;
+  }
+  // Fallback for default categories if user_categories hasn't loaded
   switch ((cat || "").toLowerCase()) {
     case "food": return "#E8A020";
     case "bills": return "#2563C8";
     case "gas": return "#C8402A";
     case "shopping": return "#7C3AED";
     case "medical": return "#2A8C5C";
-    default: return "#8A7E72";
+    default: return FALLBACK_COLOR;
   }
 };
 
@@ -368,9 +385,9 @@ function ActionButtons({ navigation }) {
 
 // ─── Receipt Item ────────────────────────────────────────────
 
-function ReceiptItem({ item, onPress }) {
+function ReceiptItem({ item, categories, onPress }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const catColor = getCategoryColor(item.category);
+  const catColor = getCategoryColor(item.category, categories);
   return (
     <TouchableOpacity activeOpacity={1}
       onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
@@ -379,7 +396,7 @@ function ReceiptItem({ item, onPress }) {
       <Animated.View style={[styles.txRow, { transform: [{ scale }] }]}>
         <View style={styles.txLeft}>
           <View style={[styles.txIconBox, { backgroundColor: catColor + "18" }]}>
-            <Ionicons name={getCategoryIcon(item.category)} size={18} color={catColor} />
+            <Ionicons name={getCategoryIcon(item.category, categories)} size={18} color={catColor} />
           </View>
           <View style={styles.txTextBlock}>
             <Text style={styles.txName} numberOfLines={1}>{item.name}</Text>
@@ -458,6 +475,7 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [profile, setProfile] = useState(null);
+  const [categories, setCategories] = useState([]);
 
   const fetchReceipts = useCallback(async (isRefresh = false) => {
     try {
@@ -474,6 +492,14 @@ export default function HomeScreen({ navigation }) {
         .eq("id", user.id)
         .single();
       if (profileData) setProfile(profileData);
+
+      // Fetch user categories for dynamic icon/color lookup
+      const { data: catData } = await supabase
+        .from("user_categories")
+        .select("name, icon, color")
+        .eq("user_id", user.id);
+      if (catData && catData.length > 0) setCategories(catData);
+
       const { data, error } = await supabase.from("receipts").select("*").eq("user_id", user.id).order("date", { ascending: false, nullsFirst: false });
       if (error) { console.error("Error fetching receipts:", error); return; }
       setReceipts(data || []);
@@ -540,7 +566,7 @@ export default function HomeScreen({ navigation }) {
                 )}
               </View>
               {recentReceipts.length > 0 ? recentReceipts.map((r) => (
-                <ReceiptItem key={r.id} item={r} onPress={() => navigation.navigate("Detail", { receipt: r.receipt })} />
+                <ReceiptItem key={r.id} item={r} categories={categories} onPress={() => navigation.navigate("Detail", { receipt: r.receipt })} />
               )) : (
                 <View style={styles.emptyReceipts}>
                   <View style={styles.emptyIconCircle}>

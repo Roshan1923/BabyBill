@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,10 @@ import {
   UIManager,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useProcessing } from '../context/ProcessingContext';
 import { supabase } from '../config/supabase';
+import AddCategoryModal from '../components/AddCategoryModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -28,6 +30,7 @@ const DS = {
   bgSurface:     '#FFFEFB',
   bgSurface2:    '#F5F2EC',
   brandNavy:     '#1A3A6B',
+  brandBlue:     '#2563C8',
   accentGold:    '#E8A020',
   accentGoldSub: '#FEF3DC',
   textPrimary:   '#1C1610',
@@ -42,13 +45,15 @@ const DS = {
   pagePad:       20,
 };
 
+const FALLBACK_ICON = 'receipt-outline';
+const FALLBACK_COLOR = '#8A7E72';
+
 // ─── Editable Item Row ───────────────────────────────────────
 
 function ItemRow({ item, index, onUpdate, onRemove }) {
   return (
     <View style={styles.itemRow}>
       <View style={styles.itemMain}>
-        {/* Item name — editable */}
         <TextInput
           style={styles.itemNameInput}
           value={item.name}
@@ -56,8 +61,6 @@ function ItemRow({ item, index, onUpdate, onRemove }) {
           placeholder="Item name"
           placeholderTextColor={DS.textSecondary}
         />
-
-        {/* Qty + Price row */}
         <View style={styles.itemMeta}>
           <View style={styles.qtyWrap}>
             <TouchableOpacity
@@ -79,7 +82,6 @@ function ItemRow({ item, index, onUpdate, onRemove }) {
               <Ionicons name="add" size={14} color={DS.textSecondary} />
             </TouchableOpacity>
           </View>
-
           <View style={styles.itemPriceWrap}>
             <Text style={styles.itemDollar}>$</Text>
             <TextInput
@@ -93,13 +95,7 @@ function ItemRow({ item, index, onUpdate, onRemove }) {
           </View>
         </View>
       </View>
-
-      {/* Remove button */}
-      <TouchableOpacity
-        style={styles.removeBtn}
-        onPress={() => onRemove(index)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={styles.removeBtn} onPress={() => onRemove(index)} activeOpacity={0.7}>
         <Ionicons name="close-circle" size={22} color={DS.negative} />
       </TouchableOpacity>
     </View>
@@ -129,8 +125,34 @@ export default function ReviewReceiptScreen({ route, navigation }) {
   );
   const [saving, setSaving] = useState(false);
 
-  const CATEGORIES = ['Food', 'Bills', 'Gas', 'Shopping', 'Medical', 'Other'];
+  // Dynamic categories
+  const [userCategories, setUserCategories] = useState([]);
+  const [addCatModalVisible, setAddCatModalVisible] = useState(false);
+
   const PAYMENTS = ['Cash', 'Credit Card', 'Debit Card', 'Unknown'];
+
+  // Fetch categories on focus
+  const fetchCategories = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('user_categories')
+        .select('name, icon, color')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+      if (!error && data) setUserCategories(data);
+    } catch (err) {
+      console.log('Error fetching categories:', err);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetchCategories(); }, [fetchCategories]));
+
+  const handleCategoryAdded = (newCat) => {
+    setUserCategories((prev) => [...prev, newCat]);
+    setCategory(newCat.name);
+  };
 
   // ── Item CRUD ──
 
@@ -160,7 +182,6 @@ export default function ReviewReceiptScreen({ route, navigation }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Update the receipt in Supabase with any user edits
       if (receipt?.id) {
         const cleanItems = items.map(({ _key, ...rest }) => rest);
         const { error } = await supabase
@@ -186,9 +207,7 @@ export default function ReviewReceiptScreen({ route, navigation }) {
         }
       }
 
-      // Mark as reviewed — removes from To Review tab
       markReviewed(jobId);
-
       navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'saved' } });
     } catch (err) {
       Alert.alert('Error', 'Something went wrong: ' + err.message);
@@ -207,7 +226,6 @@ export default function ReviewReceiptScreen({ route, navigation }) {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            // Delete from Supabase if it exists
             if (receipt?.id) {
               await supabase.from('receipts').delete().eq('id', receipt.id);
             }
@@ -265,9 +283,7 @@ export default function ReviewReceiptScreen({ route, navigation }) {
                 placeholderTextColor="#C5BEB5"
               />
             </View>
-
             <View style={styles.fieldDivider} />
-
             <View style={styles.fieldGroup}>
               <View style={styles.fieldLabel}>
                 <Ionicons name="calendar-outline" size={15} color={DS.textSecondary} />
@@ -290,85 +306,89 @@ export default function ReviewReceiptScreen({ route, navigation }) {
                 <Text style={styles.amountLabel}>Subtotal</Text>
                 <View style={styles.amountInputRow}>
                   <Text style={styles.dollar}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    value={subtotal}
-                    onChangeText={setSubtotal}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor="#C5BEB5"
-                  />
+                  <TextInput style={styles.amountInput} value={subtotal} onChangeText={setSubtotal} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#C5BEB5" />
                 </View>
               </View>
               <View style={styles.amountCell}>
                 <Text style={styles.amountLabel}>Tax</Text>
                 <View style={styles.amountInputRow}>
                   <Text style={styles.dollar}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    value={tax}
-                    onChangeText={setTax}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor="#C5BEB5"
-                  />
+                  <TextInput style={styles.amountInput} value={tax} onChangeText={setTax} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#C5BEB5" />
                 </View>
               </View>
               <View style={styles.amountCell}>
                 <Text style={styles.amountLabel}>Discount</Text>
                 <View style={styles.amountInputRow}>
                   <Text style={styles.dollar}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    value={discount}
-                    onChangeText={setDiscount}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor="#C5BEB5"
-                  />
+                  <TextInput style={styles.amountInput} value={discount} onChangeText={setDiscount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="#C5BEB5" />
                 </View>
               </View>
             </View>
-
             <View style={styles.fieldDivider} />
-
-            {/* Total — highlighted */}
             <View style={styles.totalBanner}>
               <Text style={styles.totalBannerLabel}>Total</Text>
               <View style={styles.totalBannerInput}>
                 <Text style={styles.totalDollar}>$</Text>
-                <TextInput
-                  style={styles.totalField}
-                  value={total}
-                  onChangeText={setTotal}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor="rgba(232,160,32,0.5)"
-                />
+                <TextInput style={styles.totalField} value={total} onChangeText={setTotal} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor="rgba(232,160,32,0.5)" />
               </View>
             </View>
           </View>
 
-          {/* ── Category ── */}
+          {/* ── Category (dynamic chips) ── */}
           <View style={styles.card}>
             <View style={styles.fieldLabel}>
               <Ionicons name="pricetag-outline" size={15} color={DS.textSecondary} />
               <Text style={styles.label}>Category</Text>
             </View>
-            <View style={styles.pillRow}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.pill, category === cat && styles.pillActive]}
-                  onPress={() => setCategory(cat)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.pillText, category === cat && styles.pillTextActive]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryChipsRow}
+              style={{ marginTop: 6, marginBottom: 2 }}
+            >
+              {userCategories.map((cat) => {
+                const isActive = category.toLowerCase() === cat.name.toLowerCase();
+                const catColor = cat.color || FALLBACK_COLOR;
+                return (
+                  <TouchableOpacity
+                    key={cat.name}
+                    style={[
+                      styles.categoryChip,
+                      isActive
+                        ? { backgroundColor: catColor + '20', borderColor: catColor }
+                        : { backgroundColor: DS.bgSurface2, borderColor: DS.border },
+                    ]}
+                    onPress={() => setCategory(cat.name)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={cat.icon || FALLBACK_ICON}
+                      size={14}
+                      color={isActive ? catColor : DS.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        { color: isActive ? catColor : DS.textSecondary },
+                        isActive && { fontWeight: '700' },
+                      ]}
+                    >
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* + New chip */}
+              <TouchableOpacity
+                style={styles.addCategoryChip}
+                onPress={() => setAddCatModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add" size={16} color={DS.brandBlue} />
+                <Text style={styles.addCategoryChipText}>New</Text>
+              </TouchableOpacity>
+            </ScrollView>
 
             <View style={styles.fieldDivider} />
 
@@ -399,11 +419,7 @@ export default function ReviewReceiptScreen({ route, navigation }) {
                 <Ionicons name="receipt-outline" size={15} color={DS.textSecondary} />
                 <Text style={styles.label}>Items ({items.length})</Text>
               </View>
-              <TouchableOpacity
-                style={styles.addItemBtn}
-                onPress={addItem}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={styles.addItemBtn} onPress={addItem} activeOpacity={0.7}>
                 <Ionicons name="add-circle" size={20} color={DS.positive} />
                 <Text style={styles.addItemText}>Add</Text>
               </TouchableOpacity>
@@ -418,31 +434,19 @@ export default function ReviewReceiptScreen({ route, navigation }) {
               </View>
             ) : (
               items.map((item, i) => (
-                <ItemRow
-                  key={item._key}
-                  item={item}
-                  index={i}
-                  onUpdate={updateItem}
-                  onRemove={removeItem}
-                />
+                <ItemRow key={item._key} item={item} index={i} onUpdate={updateItem} onRemove={removeItem} />
               ))
             )}
           </View>
 
-          {/* Bottom spacer */}
           <View style={{ height: 110 }} />
         </ScrollView>
 
         {/* ── Bottom Bar ── */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity
-            style={styles.discardBtn}
-            onPress={handleDiscard}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.discardBtn} onPress={handleDiscard} activeOpacity={0.7}>
             <Ionicons name="trash-outline" size={18} color={DS.negative} />
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
@@ -454,6 +458,14 @@ export default function ReviewReceiptScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* ── Add Category Modal (inline) ── */}
+      <AddCategoryModal
+        visible={addCatModalVisible}
+        onClose={() => setAddCatModalVisible(false)}
+        existingNames={userCategories.map((c) => c.name)}
+        onCategoryAdded={handleCategoryAdded}
+      />
     </SafeAreaView>
   );
 }
@@ -463,56 +475,38 @@ export default function ReviewReceiptScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: DS.bgPage },
 
-  // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: DS.pagePad,
     paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 4 : 4,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: DS.border,
-    backgroundColor: DS.bgPage,
+    paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: DS.border, backgroundColor: DS.bgPage,
   },
   headerBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: DS.bgSurface,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: DS.border,
+    width: 36, height: 36, borderRadius: 18, backgroundColor: DS.bgSurface,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: DS.border,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '700', color: DS.textPrimary },
   headerSubtitle: { fontSize: 12, fontWeight: '500', color: DS.textSecondary, marginTop: 1 },
 
-  // Scroll
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: DS.pagePad, paddingTop: 14 },
 
-  // Card
   card: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: DS.border,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.8, shadowRadius: 8 },
       android: { elevation: 2 },
     }),
   },
 
-  // Field
   fieldGroup: { marginBottom: 2 },
   fieldLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
   label: { fontSize: 12, fontWeight: '600', color: DS.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4 },
-  fieldInput: {
-    fontSize: 17, fontWeight: '600', color: DS.textPrimary,
-    paddingVertical: 8, paddingHorizontal: 0,
-  },
+  fieldInput: { fontSize: 17, fontWeight: '600', color: DS.textPrimary, paddingVertical: 8, paddingHorizontal: 0 },
   fieldDivider: { height: 1, backgroundColor: DS.border, marginVertical: 14 },
 
-  // Amounts grid
   amountsGrid: { flexDirection: 'row', gap: 12 },
   amountCell: { flex: 1 },
   amountLabel: { fontSize: 11, fontWeight: '600', color: DS.textSecondary, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 },
@@ -520,7 +514,6 @@ const styles = StyleSheet.create({
   dollar: { fontSize: 15, fontWeight: '600', color: DS.textSecondary, marginRight: 2 },
   amountInput: { flex: 1, fontSize: 16, fontWeight: '600', color: DS.textPrimary, paddingVertical: 6 },
 
-  // Total banner
   totalBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: DS.accentGoldSub, borderRadius: 12, padding: 14, marginTop: 2,
@@ -530,7 +523,20 @@ const styles = StyleSheet.create({
   totalDollar: { fontSize: 22, fontWeight: '800', color: DS.accentGold, marginRight: 2 },
   totalField: { fontSize: 22, fontWeight: '800', color: DS.accentGold, minWidth: 70, paddingVertical: 0, textAlign: 'right' },
 
-  // Pills
+  // Category chips
+  categoryChipsRow: { gap: 8, paddingRight: 4 },
+  categoryChip: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 14,
+    borderRadius: 999, borderWidth: 1.5, gap: 6,
+  },
+  categoryChipText: { fontSize: 13, fontWeight: '600' },
+  addCategoryChip: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 14,
+    borderRadius: 999, borderWidth: 1.5, borderColor: DS.brandBlue, borderStyle: 'dashed',
+    backgroundColor: DS.brandBlue + '08', gap: 4,
+  },
+  addCategoryChipText: { fontSize: 13, fontWeight: '600', color: DS.brandBlue },
+
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6, marginBottom: 2 },
   pill: {
     paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999,
@@ -540,21 +546,16 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 13, fontWeight: '600', color: DS.textSecondary },
   pillTextActive: { color: DS.textInverse },
 
-  // Items
   itemsHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10,
   },
   addItemBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999,
-    backgroundColor: DS.positiveSub,
+    paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: DS.positiveSub,
   },
   addItemText: { fontSize: 13, fontWeight: '600', color: DS.positive },
-
   itemRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: DS.border,
   },
   itemMain: { flex: 1 },
@@ -563,45 +564,30 @@ const styles = StyleSheet.create({
     paddingVertical: 2, paddingHorizontal: 0, marginBottom: 6,
   },
   itemMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-
-  // Qty stepper
   qtyWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 0,
     borderRadius: 8, borderWidth: 1, borderColor: DS.border, overflow: 'hidden',
   },
-  qtyBtn: {
-    width: 30, height: 28, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: DS.bgSurface2,
-  },
+  qtyBtn: { width: 30, height: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: DS.bgSurface2 },
   qtyText: { fontSize: 14, fontWeight: '700', color: DS.textPrimary, width: 28, textAlign: 'center' },
-
-  // Item price
   itemPriceWrap: { flexDirection: 'row', alignItems: 'center' },
   itemDollar: { fontSize: 14, fontWeight: '600', color: DS.textSecondary, marginRight: 2 },
-  itemPriceInput: {
-    fontSize: 15, fontWeight: '600', color: DS.textPrimary,
-    width: 65, textAlign: 'right', paddingVertical: 2,
-  },
-
+  itemPriceInput: { fontSize: 15, fontWeight: '600', color: DS.textPrimary, width: 65, textAlign: 'right', paddingVertical: 2 },
   removeBtn: { marginLeft: 10, padding: 4 },
-
   noItems: { alignItems: 'center', paddingVertical: 20 },
   noItemsText: { fontSize: 14, color: DS.textSecondary, marginBottom: 8 },
   noItemsAdd: { fontSize: 14, fontWeight: '600', color: DS.positive },
 
-  // Bottom bar
   bottomBar: {
     flexDirection: 'row', gap: 10,
     paddingHorizontal: DS.pagePad, paddingVertical: 12,
     paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-    backgroundColor: DS.bgPage,
-    borderTopWidth: 1, borderTopColor: DS.border,
+    backgroundColor: DS.bgPage, borderTopWidth: 1, borderTopColor: DS.border,
   },
   discardBtn: {
     width: 50, height: 50, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: DS.negativeSub, borderWidth: 1.5,
-    borderColor: 'rgba(200,64,42,0.15)',
+    backgroundColor: DS.negativeSub, borderWidth: 1.5, borderColor: 'rgba(200,64,42,0.15)',
   },
   saveBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

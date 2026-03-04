@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,6 @@ import { supabase } from "../config/supabase";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// ─── Design System Tokens ────────────────────────────────────
 const DS = {
   bgPage:        "#FAF8F4",
   bgSurface:     "#FFFEFB",
@@ -41,36 +40,9 @@ const DS = {
   cardRadius:    20,
 };
 
-const CATEGORIES = ["Food", "Bills", "Gas", "Shopping", "Medical", "Other"];
-
-// ─── Category Helpers ────────────────────────────────────────
-
-const getCategoryIcon = (cat) => {
-  switch ((cat || "").toLowerCase()) {
-    case "food": return "restaurant-outline";
-    case "bills": return "document-text-outline";
-    case "gas": return "car-outline";
-    case "shopping": return "bag-outline";
-    case "medical": return "medical-outline";
-    default: return "receipt-outline";
-  }
-};
-
-const getCategoryColor = (cat) => {
-  switch ((cat || "").toLowerCase()) {
-    case "food": return "#E8A020";
-    case "bills": return "#2563C8";
-    case "gas": return "#C8402A";
-    case "shopping": return "#7C3AED";
-    case "medical": return "#2A8C5C";
-    default: return "#8A7E72";
-  }
-};
-
-// ─── Main Screen ─────────────────────────────────────────────
-
 export default function ManualEntryScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
+  const [userCategories, setUserCategories] = useState([]);
 
   // Receipt fields
   const [storeName, setStoreName] = useState("");
@@ -99,6 +71,31 @@ export default function ManualEntryScreen({ navigation }) {
   const successOpacity = useRef(new Animated.Value(0)).current;
   const checkScale = useRef(new Animated.Value(0)).current;
 
+  // Fetch user categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase
+          .from("user_categories")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true });
+        if (!error && data) {
+          setUserCategories(data);
+          if (data.length > 0 && category === "Other") {
+            const hasOther = data.find((c) => c.name === "Other");
+            if (!hasOther) setCategory(data[0].name);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching categories:", err);
+      }
+    };
+    fetchCategories();
+  }, []);
+
   const playSuccessAnimation = () => {
     successScale.setValue(0);
     successOpacity.setValue(0);
@@ -118,7 +115,6 @@ export default function ManualEntryScreen({ navigation }) {
     });
   };
 
-  // Item management
   const addItem = () => {
     setItems([...items, { name: "", price: "", quantity: 1 }]);
   };
@@ -133,7 +129,6 @@ export default function ManualEntryScreen({ navigation }) {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  // Duplicate check
   const checkDuplicate = async (userId) => {
     try {
       const { data, error } = await supabase
@@ -143,7 +138,6 @@ export default function ManualEntryScreen({ navigation }) {
         .eq("store_name", storeName.trim())
         .eq("date", date)
         .eq("total_amount", parseFloat(totalAmount) || 0);
-
       if (error) return false;
       return data && data.length > 0;
     } catch (err) {
@@ -151,7 +145,6 @@ export default function ManualEntryScreen({ navigation }) {
     }
   };
 
-  // Save receipt to Supabase
   const saveReceipt = async (userId) => {
     const { error } = await supabase.from("receipts").insert({
       user_id: userId,
@@ -175,11 +168,9 @@ export default function ManualEntryScreen({ navigation }) {
       image_url: "",
       raw_text: "",
     });
-
     return error;
   };
 
-  // Main save handler
   const handleSave = async () => {
     if (!storeName.trim()) {
       setValidationMessage("Please enter a store name to continue.");
@@ -189,10 +180,7 @@ export default function ManualEntryScreen({ navigation }) {
 
     setSaving(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setSaving(false);
         setErrorMessage("You must be logged in to save receipts.");
@@ -201,7 +189,6 @@ export default function ManualEntryScreen({ navigation }) {
       }
 
       const isDuplicate = await checkDuplicate(user.id);
-
       if (isDuplicate) {
         setSaving(false);
         setDuplicateUserId(user.id);
@@ -224,7 +211,6 @@ export default function ManualEntryScreen({ navigation }) {
     }
   };
 
-  // Save duplicate anyway
   const handleSaveDuplicate = async () => {
     setSavingDuplicate(true);
     try {
@@ -316,28 +302,26 @@ export default function ManualEntryScreen({ navigation }) {
             </View>
 
             <View style={styles.categoryRow}>
-              {CATEGORIES.map((cat) => {
-                const active = category === cat;
-                const color = getCategoryColor(cat);
-                const icon = getCategoryIcon(cat);
+              {userCategories.map((cat) => {
+                const active = category === cat.name;
                 return (
                   <TouchableOpacity
-                    key={cat}
+                    key={cat.id}
                     style={[
                       styles.categoryChip,
-                      active && { backgroundColor: color + "18", borderColor: color },
+                      active && { backgroundColor: cat.color + "18", borderColor: cat.color },
                     ]}
-                    onPress={() => setCategory(cat)}
+                    onPress={() => setCategory(cat.name)}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name={icon} size={14} color={active ? color : DS.textSecondary} />
+                    <Ionicons name={cat.icon} size={14} color={active ? cat.color : DS.textSecondary} />
                     <Text
                       style={[
                         styles.categoryText,
-                        active && { color: color, fontWeight: "700" },
+                        active && { color: cat.color, fontWeight: "700" },
                       ]}
                     >
-                      {cat}
+                      {cat.name}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -605,15 +589,11 @@ export default function ManualEntryScreen({ navigation }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: DS.bgPage,
   },
-
-  // ── Top Bar ──
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -641,14 +621,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: DS.textPrimary,
   },
-
-  // ── Scroll ──
   scrollContent: {
     paddingHorizontal: DS.pagePad,
     paddingBottom: 100,
   },
-
-  // ── Section Cards ──
   sectionCard: {
     backgroundColor: DS.bgSurface,
     borderRadius: DS.cardRadius,
@@ -672,8 +648,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: DS.textPrimary,
   },
-
-  // ── Fields ──
   fieldLabel: {
     fontSize: 12,
     fontWeight: "600",
@@ -699,8 +673,6 @@ const styles = StyleSheet.create({
     backgroundColor: DS.border,
     marginVertical: 8,
   },
-
-  // ── Category ──
   categoryRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -722,8 +694,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: DS.textSecondary,
   },
-
-  // ── Items ──
   addItemBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -764,8 +734,6 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: DS.textSecondary,
   },
-
-  // ── Price Breakdown ──
   priceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -807,8 +775,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: DS.accentGold,
   },
-
-  // ── Notes ──
   notesInput: {
     fontSize: 14,
     color: DS.textPrimary,
@@ -821,8 +787,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: DS.border,
   },
-
-  // ── Save Button ──
   saveContainer: {
     padding: 16,
     paddingBottom: Platform.OS === "ios" ? 30 : 16,
@@ -848,8 +812,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-
-  // ── Custom Modals ──
   customModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -957,8 +919,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: DS.textInverse,
   },
-
-  // ── Success Modal ──
   successModalCard: {
     backgroundColor: DS.bgSurface,
     borderRadius: 24,

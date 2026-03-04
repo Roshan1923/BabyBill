@@ -26,6 +26,7 @@ import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import ExportScreen from './src/screens/ExportScreen';
 import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 import { NotificationProvider } from './src/context/NotificationContext';
+import CategoryScreen from './src/screens/CategoryScreen';
 
 
 // Auth screens
@@ -137,6 +138,11 @@ const App = () => {
                       <Stack.Screen
                       name="ExportDocuments"
                       component={ExportScreen}
+                      options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
+                      name="Categories"
+                      component={CategoryScreen}
                       options={{ animation: 'slide_from_right' }}
                       />    
                       <Stack.Screen name="Notifications" component={NotificationScreen} />

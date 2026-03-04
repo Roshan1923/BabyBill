@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,10 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
+import AddCategoryModal from "../components/AddCategoryModal";
+import ZoomableImage from "../components/ZoomableImage.jsx";
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -50,27 +53,41 @@ const DS = {
   cardRadius:    20,
 };
 
-// ─── Category Helpers ────────────────────────────────────────
+// ─── Category Helpers (dynamic with fallback) ────────────────
+const FALLBACK_ICON = "receipt-outline";
+const FALLBACK_COLOR = "#8A7E72";
 
-const getCategoryIcon = (cat) => {
+const getCategoryIcon = (cat, categories) => {
+  if (categories && categories.length > 0) {
+    const match = categories.find(
+      (c) => c.name.toLowerCase() === (cat || "").toLowerCase()
+    );
+    if (match) return match.icon;
+  }
   switch ((cat || "").toLowerCase()) {
     case "food": return "restaurant-outline";
     case "bills": return "document-text-outline";
     case "gas": return "car-outline";
     case "shopping": return "bag-outline";
     case "medical": return "medical-outline";
-    default: return "receipt-outline";
+    default: return FALLBACK_ICON;
   }
 };
 
-const getCategoryColor = (cat) => {
+const getCategoryColor = (cat, categories) => {
+  if (categories && categories.length > 0) {
+    const match = categories.find(
+      (c) => c.name.toLowerCase() === (cat || "").toLowerCase()
+    );
+    if (match) return match.color;
+  }
   switch ((cat || "").toLowerCase()) {
     case "food": return "#E8A020";
     case "bills": return "#2563C8";
     case "gas": return "#C8402A";
     case "shopping": return "#7C3AED";
     case "medical": return "#2A8C5C";
-    default: return "#8A7E72";
+    default: return FALLBACK_COLOR;
   }
 };
 
@@ -98,6 +115,68 @@ const Field = ({ label, value, onChangeText, keyboardType = "default", editing =
   </View>
 );
 
+// ─── Category Picker Component ───────────────────────────────
+
+function CategoryPicker({ categories, selected, onSelect, onAddNew }) {
+  return (
+    <View style={styles.categoryPickerContainer}>
+      <View style={styles.fieldLeft}>
+        <Ionicons name="pricetag-outline" size={16} color={DS.textSecondary} style={{ marginRight: 8 }} />
+        <Text style={styles.fieldLabel}>Category</Text>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryChipsRow}
+        style={styles.categoryChipsScroll}
+      >
+        {categories.map((cat) => {
+          const isActive = selected.toLowerCase() === cat.name.toLowerCase();
+          const catColor = cat.color || FALLBACK_COLOR;
+          return (
+            <TouchableOpacity
+              key={cat.name}
+              style={[
+                styles.categoryChip,
+                isActive
+                  ? { backgroundColor: catColor + "20", borderColor: catColor }
+                  : { backgroundColor: DS.bgSurface2, borderColor: DS.border },
+              ]}
+              onPress={() => onSelect(cat.name)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={cat.icon || FALLBACK_ICON}
+                size={14}
+                color={isActive ? catColor : DS.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  { color: isActive ? catColor : DS.textSecondary },
+                  isActive && { fontWeight: "700" },
+                ]}
+              >
+                {cat.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+
+        {/* ── Add New Category Chip ── */}
+        <TouchableOpacity
+          style={styles.addCategoryChip}
+          onPress={onAddNew}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add" size={16} color={DS.brandBlue} />
+          <Text style={styles.addCategoryChipText}>New</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function DetailScreen({ route, navigation }) {
@@ -120,6 +199,10 @@ export default function DetailScreen({ route, navigation }) {
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Dynamic categories
+  const [categories, setCategories] = useState([]);
+  const [addCatModalVisible, setAddCatModalVisible] = useState(false);
+
   // Success modal animation
   const successScale = useRef(new Animated.Value(0)).current;
   const successOpacity = useRef(new Animated.Value(0)).current;
@@ -135,7 +218,6 @@ export default function DetailScreen({ route, navigation }) {
       Animated.timing(successOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start(() => {
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 10 }).start();
-      // Auto dismiss after 1.5s
       setTimeout(() => {
         Animated.timing(successOpacity, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
           setShowSuccessModal(false);
@@ -172,6 +254,36 @@ export default function DetailScreen({ route, navigation }) {
       Animated.timing(heroOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
+
+  // Fetch user categories — useFocusEffect re-fetches on focus
+  const fetchCategories = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("user_categories")
+        .select("name, icon, color")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+      if (!error && data && data.length > 0) {
+        setCategories(data);
+      }
+    } catch (err) {
+      console.log("Error fetching categories:", err);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchCategories();
+    }, [fetchCategories])
+  );
+
+  // When a new category is added via inline modal
+  const handleCategoryAdded = (newCat) => {
+    setCategories((prev) => [...prev, newCat]);
+    setCategory(newCat.name);
+  };
 
   // Update an item field
   const updateItem = (index, field, value) => {
@@ -300,9 +412,9 @@ export default function DetailScreen({ route, navigation }) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
-  // Category styling
-  const catColor = getCategoryColor(category);
-  const catIcon = getCategoryIcon(category);
+  // Category styling (dynamic)
+  const catColor = getCategoryColor(category, categories);
+  const catIcon = getCategoryIcon(category, categories);
 
   // Items to display (collapsed = first 3, expanded = all)
   const COLLAPSED_ITEM_COUNT = 3;
@@ -373,9 +485,7 @@ export default function DetailScreen({ route, navigation }) {
               { opacity: heroOpacity, transform: [{ scale: heroScale }] },
             ]}
           >
-            {/* Top row: thumbnail + store info */}
             <View style={styles.heroTop}>
-              {/* Receipt thumbnail */}
               <TouchableOpacity
                 style={styles.thumbnailBox}
                 onPress={() => imageUrl && setShowFullImage(true)}
@@ -390,7 +500,6 @@ export default function DetailScreen({ route, navigation }) {
                 )}
               </TouchableOpacity>
 
-              {/* Store info */}
               <View style={styles.heroInfo}>
                 {editing ? (
                   <TextInput
@@ -417,10 +526,8 @@ export default function DetailScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* Divider */}
             <View style={styles.heroDivider} />
 
-            {/* Total amount — big and prominent */}
             <View style={styles.heroTotalRow}>
               <Text style={styles.heroTotalLabel}>Total</Text>
               <Text style={styles.heroTotalAmount}>
@@ -428,7 +535,6 @@ export default function DetailScreen({ route, navigation }) {
               </Text>
             </View>
 
-            {/* Quick info chips */}
             <View style={styles.heroChips}>
               {paymentMethod && paymentMethod !== "Unknown" && (
                 <View style={styles.chip}>
@@ -464,13 +570,25 @@ export default function DetailScreen({ route, navigation }) {
             </View>
           </Animated.View>
 
-          {/* ── Details Card (editing mode shows all fields) ── */}
+          {/* ── Details Card (editing mode) ── */}
           {editing && (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>Details</Text>
               <Field label="Date" value={date} onChangeText={setDate} editing icon="calendar-outline" />
               <View style={styles.fieldDivider} />
-              <Field label="Category" value={category} onChangeText={setCategory} editing icon="pricetag-outline" />
+
+              {/* Category Picker — dynamic chips with inline + modal */}
+              {categories.length > 0 ? (
+                <CategoryPicker
+                  categories={categories}
+                  selected={category}
+                  onSelect={setCategory}
+                  onAddNew={() => setAddCatModalVisible(true)}
+                />
+              ) : (
+                <Field label="Category" value={category} onChangeText={setCategory} editing icon="pricetag-outline" />
+              )}
+
               <View style={styles.fieldDivider} />
               <Field label="Payment" value={paymentMethod} onChangeText={setPaymentMethod} editing icon="card-outline" />
             </View>
@@ -530,7 +648,6 @@ export default function DetailScreen({ route, navigation }) {
                 </View>
               ))}
 
-              {/* Show more / less toggle */}
               {hasMoreItems && (
                 <TouchableOpacity
                   style={styles.showMoreBtn}
@@ -651,6 +768,14 @@ export default function DetailScreen({ route, navigation }) {
         )}
       </KeyboardAvoidingView>
 
+      {/* ── Add Category Modal (inline — no navigation) ── */}
+      <AddCategoryModal
+        visible={addCatModalVisible}
+        onClose={() => setAddCatModalVisible(false)}
+        existingNames={categories.map((c) => c.name)}
+        onCategoryAdded={handleCategoryAdded}
+      />
+
       {/* ── Full Image Modal ── */}
       <Modal visible={showFullImage} animationType="fade" transparent>
         <View style={styles.fullImageOverlay}>
@@ -663,11 +788,7 @@ export default function DetailScreen({ route, navigation }) {
             </View>
           </TouchableOpacity>
           {imageUrl && (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.fullImage}
-              resizeMode="contain"
-            />
+            <ZoomableImage uri={imageUrl} />
           )}
         </View>
       </Modal>
@@ -695,16 +816,13 @@ export default function DetailScreen({ route, navigation }) {
       <Modal visible={showDeleteModal} animationType="fade" transparent>
         <View style={styles.customModalOverlay}>
           <View style={styles.customModalCard}>
-            {/* Icon */}
             <View style={styles.deleteIconCircle}>
               <Icon name="trash-2" size={28} color={DS.negative} />
             </View>
-
             <Text style={styles.customModalTitle}>Delete Receipt?</Text>
             <Text style={styles.customModalMessage}>
               This will permanently remove this receipt and all its data. This action can't be undone.
             </Text>
-
             <View style={styles.customModalButtons}>
               <TouchableOpacity
                 style={styles.customModalBtnSecondary}
@@ -737,18 +855,8 @@ export default function DetailScreen({ route, navigation }) {
       {/* ── Success Modal ── */}
       <Modal visible={showSuccessModal} animationType="none" transparent>
         <Animated.View style={[styles.customModalOverlay, { opacity: successOpacity }]}>
-          <Animated.View
-            style={[
-              styles.successModalCard,
-              { transform: [{ scale: successScale }] },
-            ]}
-          >
-            <Animated.View
-              style={[
-                styles.successIconCircle,
-                { transform: [{ scale: checkScale }] },
-              ]}
-            >
+          <Animated.View style={[styles.successModalCard, { transform: [{ scale: successScale }] }]}>
+            <Animated.View style={[styles.successIconCircle, { transform: [{ scale: checkScale }] }]}>
               <Icon name="check" size={32} color={DS.textInverse} />
             </Animated.View>
             <Text style={styles.successTitle}>Saved!</Text>
@@ -818,596 +926,198 @@ export default function DetailScreen({ route, navigation }) {
 // ─── Styles ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: DS.bgPage,
-  },
+  safe: { flex: 1, backgroundColor: DS.bgPage },
 
-  // ── Top Bar ──
   topBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: DS.pagePad,
     paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 6 : 8,
     paddingBottom: 8,
   },
   topBarBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: DS.bgSurface,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: DS.border,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: DS.bgSurface,
+    alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: DS.border,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 8 },
       android: { elevation: 2 },
     }),
   },
-  topBarActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  topBarActions: { flexDirection: "row", alignItems: "center" },
 
-  // ── Scroll ──
-  scrollContent: {
-    paddingHorizontal: DS.pagePad,
-    paddingBottom: 100,
-  },
+  scrollContent: { paddingHorizontal: DS.pagePad, paddingBottom: 100 },
 
-  // ── Hero Card ──
   heroCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: DS.cardRadius,
-    padding: 20,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: DS.cardRadius, padding: 20, marginTop: 8,
+    borderWidth: 1, borderColor: DS.border,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 },
       android: { elevation: 3 },
     }),
   },
-  heroTop: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  heroTop: { flexDirection: "row", alignItems: "center" },
   thumbnailBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
-    backgroundColor: DS.bgSurface2,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: DS.border,
+    width: 64, height: 64, borderRadius: 14, backgroundColor: DS.bgSurface2,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+    borderWidth: 1, borderColor: DS.border,
   },
-  thumbnailImage: {
-    width: "100%",
-    height: "100%",
-  },
-  heroInfo: {
-    flex: 1,
-    marginLeft: 14,
-  },
-  heroStoreName: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: DS.textPrimary,
-    letterSpacing: -0.3,
-  },
+  thumbnailImage: { width: "100%", height: "100%" },
+  heroInfo: { flex: 1, marginLeft: 14 },
+  heroStoreName: { fontSize: 22, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3 },
   heroStoreInput: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: DS.textPrimary,
-    borderBottomWidth: 1,
-    borderBottomColor: DS.brandBlue,
-    paddingBottom: 2,
-    paddingVertical: 0,
+    fontSize: 20, fontWeight: "700", color: DS.textPrimary,
+    borderBottomWidth: 1, borderBottomColor: DS.brandBlue, paddingBottom: 2, paddingVertical: 0,
   },
-  heroMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
-    gap: 10,
-  },
-  categoryPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    gap: 4,
-  },
-  categoryPillText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  heroDate: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: DS.textSecondary,
-  },
-  heroDivider: {
-    height: 1,
-    backgroundColor: DS.border,
-    marginVertical: 16,
-  },
-  heroTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-  },
-  heroTotalLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: DS.textSecondary,
-  },
-  heroTotalAmount: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: DS.accentGold,
-    letterSpacing: -0.5,
-  },
-  heroChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginTop: 14,
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: DS.bgSurface2,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    gap: 5,
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: DS.textSecondary,
-  },
+  heroMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 6, gap: 10 },
+  categoryPill: { flexDirection: "row", alignItems: "center", paddingVertical: 3, paddingHorizontal: 8, borderRadius: 999, gap: 4 },
+  categoryPillText: { fontSize: 12, fontWeight: "600" },
+  heroDate: { fontSize: 13, fontWeight: "500", color: DS.textSecondary },
+  heroDivider: { height: 1, backgroundColor: DS.border, marginVertical: 16 },
+  heroTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
+  heroTotalLabel: { fontSize: 14, fontWeight: "500", color: DS.textSecondary },
+  heroTotalAmount: { fontSize: 32, fontWeight: "800", color: DS.accentGold, letterSpacing: -0.5 },
+  heroChips: { flexDirection: "row", flexWrap: "wrap", marginTop: 14, gap: 8 },
+  chip: { flexDirection: "row", alignItems: "center", backgroundColor: DS.bgSurface2, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999, gap: 5 },
+  chipText: { fontSize: 12, fontWeight: "500", color: DS.textSecondary },
 
-  // ── Section Cards ──
   sectionCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: DS.cardRadius,
-    padding: 20,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: DS.cardRadius, padding: 20, marginTop: 14,
+    borderWidth: 1, borderColor: DS.border,
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.8, shadowRadius: 12 },
       android: { elevation: 1 },
     }),
   },
-  sectionTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  sectionTitleLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: DS.textPrimary,
-    marginBottom: 8,
-  },
-  itemCountBadge: {
-    backgroundColor: DS.brandNavy,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginBottom: 8,
-  },
-  itemCountText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: DS.textInverse,
-  },
+  sectionTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  sectionTitleLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: DS.textPrimary, marginBottom: 8 },
+  itemCountBadge: { backgroundColor: DS.brandNavy, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 8 },
+  itemCountText: { fontSize: 11, fontWeight: "700", color: DS.textInverse },
 
-  // ── Field Rows ──
-  fieldRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  fieldLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: DS.textSecondary,
-  },
-  fieldValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: DS.textPrimary,
-    textAlign: "right",
-  },
+  fieldRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 },
+  fieldLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  fieldLabel: { fontSize: 14, fontWeight: "500", color: DS.textSecondary },
+  fieldValue: { fontSize: 14, fontWeight: "600", color: DS.textPrimary, textAlign: "right" },
   fieldInput: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: DS.textPrimary,
-    textAlign: "right",
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: DS.bgSurface2,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: DS.border,
+    fontSize: 14, fontWeight: "600", color: DS.textPrimary, textAlign: "right",
+    paddingVertical: 4, paddingHorizontal: 8, backgroundColor: DS.bgSurface2,
+    borderRadius: 8, borderWidth: 1, borderColor: DS.border,
   },
-  fieldDivider: {
-    height: 1,
-    backgroundColor: DS.border,
-  },
+  fieldDivider: { height: 1, backgroundColor: DS.border },
 
-  // ── Items ──
-  itemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
+  categoryPickerContainer: { paddingVertical: 12 },
+  categoryChipsScroll: { marginTop: 10 },
+  categoryChipsRow: { gap: 8, paddingRight: 4 },
+  categoryChip: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 7, paddingHorizontal: 14,
+    borderRadius: 999, borderWidth: 1.5, gap: 6,
   },
-  itemName: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: DS.textPrimary,
-    flex: 1,
-    marginRight: 12,
+  categoryChipText: { fontSize: 13, fontWeight: "600" },
+  addCategoryChip: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 7, paddingHorizontal: 14,
+    borderRadius: 999, borderWidth: 1.5, borderColor: DS.brandBlue, borderStyle: "dashed",
+    backgroundColor: DS.brandBlue + "08", gap: 4,
   },
-  itemPrice: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: DS.textPrimary,
-  },
+  addCategoryChipText: { fontSize: 13, fontWeight: "600", color: DS.brandBlue },
+
+  itemRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 },
+  itemName: { fontSize: 14, fontWeight: "500", color: DS.textPrimary, flex: 1, marginRight: 12 },
+  itemPrice: { fontSize: 14, fontWeight: "600", color: DS.textPrimary },
   showMoreBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 12,
-    gap: 4,
-    borderTopWidth: 1,
-    borderTopColor: DS.border,
-    marginTop: 4,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    paddingTop: 12, gap: 4, borderTopWidth: 1, borderTopColor: DS.border, marginTop: 4,
   },
-  showMoreText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: DS.brandBlue,
-  },
+  showMoreText: { fontSize: 13, fontWeight: "600", color: DS.brandBlue },
 
-  // ── Total Row in Price Breakdown ──
-  totalDivider: {
-    height: 2,
-    backgroundColor: DS.brandNavy,
-    marginTop: 4,
-    borderRadius: 1,
-  },
-  totalLabel: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: DS.textPrimary,
-    letterSpacing: 0.5,
-  },
-  totalValue: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: DS.accentGold,
-  },
-  totalInput: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: DS.accentGold,
-  },
+  totalDivider: { height: 2, backgroundColor: DS.brandNavy, marginTop: 4, borderRadius: 1 },
+  totalLabel: { fontSize: 15, fontWeight: "800", color: DS.textPrimary, letterSpacing: 0.5 },
+  totalValue: { fontSize: 18, fontWeight: "800", color: DS.accentGold },
+  totalInput: { fontSize: 16, fontWeight: "800", color: DS.accentGold },
 
-  // ── Notes ──
   notesInput: {
-    fontSize: 14,
-    color: DS.textPrimary,
-    minHeight: 80,
-    textAlignVertical: "top",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: DS.bgSurface2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: DS.border,
+    fontSize: 14, color: DS.textPrimary, minHeight: 80, textAlignVertical: "top",
+    paddingVertical: 8, paddingHorizontal: 12, backgroundColor: DS.bgSurface2,
+    borderRadius: 12, borderWidth: 1, borderColor: DS.border,
   },
-  notesText: {
-    fontSize: 14,
-    color: DS.textPrimary,
-    lineHeight: 20,
-  },
-  notesPlaceholder: {
-    fontSize: 14,
-    color: DS.textSecondary,
-    fontStyle: "italic",
-  },
+  notesText: { fontSize: 14, color: DS.textPrimary, lineHeight: 20 },
+  notesPlaceholder: { fontSize: 14, color: DS.textSecondary, fontStyle: "italic" },
 
-  // ── OCR Button ──
   ocrButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: DS.bgSurface,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: DS.border,
-    gap: 10,
+    flexDirection: "row", alignItems: "center", backgroundColor: DS.bgSurface,
+    borderRadius: 14, padding: 16, marginTop: 14, borderWidth: 1, borderColor: DS.border, gap: 10,
   },
-  ocrButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: DS.textSecondary,
-    flex: 1,
-  },
+  ocrButtonText: { fontSize: 14, fontWeight: "500", color: DS.textSecondary, flex: 1 },
 
-  // ── Scanned On ──
   scannedOnCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    marginTop: 14,
-    gap: 6,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    paddingVertical: 16, marginTop: 14, gap: 6,
   },
-  scannedOnText: {
-    fontSize: 12,
-    fontWeight: "400",
-    color: DS.textSecondary,
-  },
+  scannedOnText: { fontSize: 12, fontWeight: "400", color: DS.textSecondary },
 
-  // ── Save Button ──
   saveContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    paddingBottom: Platform.OS === "ios" ? 30 : 16,
-    backgroundColor: DS.bgPage,
-    borderTopWidth: 1,
-    borderTopColor: DS.border,
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    padding: 16, paddingBottom: Platform.OS === "ios" ? 30 : 16,
+    backgroundColor: DS.bgPage, borderTopWidth: 1, borderTopColor: DS.border,
   },
   saveBtn: {
-    backgroundColor: DS.brandNavy,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
+    backgroundColor: DS.brandNavy, borderRadius: 14, paddingVertical: 16,
+    alignItems: "center", justifyContent: "center", flexDirection: "row",
     ...Platform.select({
       ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 16 },
       android: { elevation: 4 },
     }),
   },
   saveBtnDisabled: { opacity: 0.5 },
-  saveBtnText: {
-    color: DS.textInverse,
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  saveBtnText: { color: DS.textInverse, fontSize: 16, fontWeight: "700" },
 
-  // ── Full Image Modal ──
-  fullImageOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.92)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fullImageClose: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 54 : 40,
-    right: 20,
-    zIndex: 10,
-  },
-  fullImageCloseCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fullImage: {
-    width: "92%",
-    height: "78%",
-  },
+  fullImageOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", alignItems: "center" },
+  fullImageClose: { position: "absolute", top: Platform.OS === "ios" ? 54 : 40, right: 20, zIndex: 10 },
+  fullImageCloseCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  fullImage: { width: "92%", height: "78%" },
 
-  // ── OCR Modal ──
-  ocrModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-  },
-  ocrModalContent: {
-    backgroundColor: DS.bgSurface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "80%",
-    padding: 20,
-  },
-  ocrModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  ocrModalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: DS.textPrimary,
-  },
-  ocrModalScroll: {
-    maxHeight: "90%",
-  },
+  ocrModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  ocrModalContent: { backgroundColor: DS.bgSurface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "80%", padding: 20 },
+  ocrModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  ocrModalTitle: { fontSize: 18, fontWeight: "700", color: DS.textPrimary },
+  ocrModalScroll: { maxHeight: "90%" },
   ocrText: {
-    fontSize: 13,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    color: DS.textPrimary,
-    lineHeight: 20,
-    backgroundColor: DS.bgSurface2,
-    padding: 16,
-    borderRadius: 12,
+    fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    color: DS.textPrimary, lineHeight: 20, backgroundColor: DS.bgSurface2, padding: 16, borderRadius: 12,
   },
 
-  // ── Custom Modals ──
-  customModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 32,
-  },
+  customModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
   customModalCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    paddingVertical: 28,
-    paddingHorizontal: 24,
-    width: "100%",
-    alignItems: "center",
+    backgroundColor: DS.bgSurface, borderRadius: 24, paddingVertical: 28, paddingHorizontal: 24,
+    width: "100%", alignItems: "center",
     ...Platform.select({
       ios: { shadowColor: "rgba(0,0,0,0.25)", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 30 },
       android: { elevation: 12 },
     }),
   },
-  deleteIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#C8402A18",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  errorIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#C8402A18",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  discardIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: DS.accentGoldSub,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  customModalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: DS.textPrimary,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  customModalMessage: {
-    fontSize: 14,
-    fontWeight: "400",
-    color: DS.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  customModalButtons: {
-    flexDirection: "row",
-    gap: 10,
-    width: "100%",
-  },
+  deleteIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#C8402A18", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  errorIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#C8402A18", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  discardIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: DS.accentGoldSub, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  customModalTitle: { fontSize: 20, fontWeight: "700", color: DS.textPrimary, textAlign: "center", marginBottom: 8 },
+  customModalMessage: { fontSize: 14, fontWeight: "400", color: DS.textSecondary, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+  customModalButtons: { flexDirection: "row", gap: 10, width: "100%" },
   customModalBtnSecondary: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: DS.bgSurface2,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: DS.border,
+    flex: 1, height: 48, borderRadius: 14, backgroundColor: DS.bgSurface2,
+    alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: DS.border,
   },
-  customModalBtnSecondaryText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: DS.textPrimary,
-  },
-  customModalBtnDanger: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: DS.negative,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-  },
-  customModalBtnDangerText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: DS.textInverse,
-  },
-  customModalBtnPrimary: {
-    width: "100%",
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: DS.brandNavy,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  customModalBtnPrimaryText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: DS.textInverse,
-  },
+  customModalBtnSecondaryText: { fontSize: 15, fontWeight: "600", color: DS.textPrimary },
+  customModalBtnDanger: { flex: 1, height: 48, borderRadius: 14, backgroundColor: DS.negative, alignItems: "center", justifyContent: "center", flexDirection: "row" },
+  customModalBtnDangerText: { fontSize: 15, fontWeight: "600", color: DS.textInverse },
+  customModalBtnPrimary: { width: "100%", height: 48, borderRadius: 14, backgroundColor: DS.brandNavy, alignItems: "center", justifyContent: "center" },
+  customModalBtnPrimaryText: { fontSize: 15, fontWeight: "600", color: DS.textInverse },
 
-  // ── Success Modal ──
   successModalCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    paddingVertical: 36,
-    paddingHorizontal: 24,
-    width: "80%",
-    alignItems: "center",
+    backgroundColor: DS.bgSurface, borderRadius: 24, paddingVertical: 36, paddingHorizontal: 24,
+    width: "80%", alignItems: "center",
     ...Platform.select({
       ios: { shadowColor: "rgba(0,0,0,0.25)", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 30 },
       android: { elevation: 12 },
     }),
   },
-  successIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: DS.positive,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  successTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: DS.textPrimary,
-    marginBottom: 4,
-  },
-  successMessage: {
-    fontSize: 14,
-    fontWeight: "400",
-    color: DS.textSecondary,
-  },
+  successIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: DS.positive, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  successTitle: { fontSize: 22, fontWeight: "700", color: DS.textPrimary, marginBottom: 4 },
+  successMessage: { fontSize: 14, fontWeight: "400", color: DS.textSecondary },
 });

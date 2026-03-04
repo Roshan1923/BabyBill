@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
-// Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -46,7 +45,6 @@ function ProgressBar({ status }) {
 
   useEffect(() => {
     if (status === 'uploading') {
-      // Indeterminate: loop 0 → 0.4
       Animated.loop(
         Animated.sequence([
           Animated.timing(progress, { toValue: 0.4, duration: 1200, useNativeDriver: false }),
@@ -54,7 +52,6 @@ function ProgressBar({ status }) {
         ])
       ).start();
     } else if (status === 'processing') {
-      // Indeterminate: loop 0.4 → 0.85
       progress.setValue(0.4);
       Animated.loop(
         Animated.sequence([
@@ -134,7 +131,7 @@ const STATUS_CONFIG = {
 
 // ─── Review Card ─────────────────────────────────────────────
 
-function ReviewCard({ item, onPress, onRetry, onForceSave }) {
+function ReviewCard({ item, onPress, onDelete, onForceSave }) {
   const scale = useRef(new Animated.Value(1)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
@@ -193,14 +190,12 @@ function ReviewCard({ item, onPress, onRetry, onForceSave }) {
         <View style={[styles.card, { borderColor: cardBorderColor }]}>
           {/* Main row */}
           <View style={styles.cardRow}>
-            {/* Thumbnail with status overlay */}
             <View style={styles.thumbWrap}>
               <Image
                 source={{ uri: 'file://' + item.photoPath }}
                 style={styles.thumbImage}
                 resizeMode="cover"
               />
-              {/* Status overlay on thumbnail */}
               {isActive && (
                 <View style={styles.thumbOverlay}>
                   <Ionicons name={config.icon} size={18} color="#fff" />
@@ -218,13 +213,10 @@ function ReviewCard({ item, onPress, onRetry, onForceSave }) {
               )}
             </View>
 
-            {/* Content */}
             <View style={styles.cardContent}>
               <Text style={styles.cardTitle} numberOfLines={1}>
                 {item.storeName || `Receipt #${item.index || ''}`}
               </Text>
-
-              {/* Status line */}
               <View style={styles.statusRow}>
                 <View style={[styles.statusDot, { backgroundColor: config.color }]} />
                 <Text style={[styles.statusLabel, { color: config.color }]}>
@@ -232,14 +224,11 @@ function ReviewCard({ item, onPress, onRetry, onForceSave }) {
                 </Text>
                 <Text style={styles.statusSublabel}>{config.sublabel}</Text>
               </View>
-
-              {/* Time */}
               <Text style={styles.cardTime}>
                 {item.capturedAt ? formatTimeAgo(item.capturedAt) : ''}
               </Text>
             </View>
 
-            {/* Right action */}
             <View style={styles.cardAction}>
               {isReady && (
                 <View style={styles.reviewChevron}>
@@ -256,7 +245,6 @@ function ReviewCard({ item, onPress, onRetry, onForceSave }) {
             </View>
           </View>
 
-          {/* Progress bar for active states */}
           {(isActive || isReady) && <ProgressBar status={item.status} />}
 
           {/* Expanded error section */}
@@ -284,12 +272,12 @@ function ReviewCard({ item, onPress, onRetry, onForceSave }) {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={[styles.retryBtn, item.isDuplicate && { flex: 1 }]}
-                  onPress={() => onRetry?.(item)}
+                  style={styles.deleteBtn}
+                  onPress={() => onDelete?.(item)}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="refresh" size={16} color={DS.textInverse} />
-                  <Text style={styles.retryBtnText}>Retry</Text>
+                  <Ionicons name="trash-outline" size={16} color={DS.textInverse} />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -367,12 +355,12 @@ function EmptyReview() {
 
 // ─── Main Component ──────────────────────────────────────────
 
-export default function ToReviewReceipts({ items = [], onPressItem, onRetry, onForceSave }) {
+export default function ToReviewReceipts({ items = [], onPressItem, onDelete, onForceSave }) {
   const renderItem = ({ item, index }) => (
     <ReviewCard
       item={{ ...item, index: index + 1 }}
       onPress={() => onPressItem?.(item)}
-      onRetry={() => onRetry?.(item)}
+      onDelete={() => onDelete?.(item)}
       onForceSave={() => onForceSave?.(item)}
     />
   );
@@ -407,7 +395,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // Summary pills
   summaryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -433,7 +420,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Card
   card: {
     backgroundColor: DS.bgSurface,
     borderRadius: 16,
@@ -457,7 +443,6 @@ const styles = StyleSheet.create({
     padding: 14,
   },
 
-  // Thumbnail
   thumbWrap: {
     width: 60,
     height: 72,
@@ -488,7 +473,6 @@ const styles = StyleSheet.create({
     borderColor: DS.bgSurface,
   },
 
-  // Content
   cardContent: {
     flex: 1,
     marginLeft: 14,
@@ -527,7 +511,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Right action
   cardAction: {
     marginLeft: 8,
     width: 28,
@@ -542,7 +525,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Error expanded section
   errorSection: {
     paddingHorizontal: 14,
     paddingBottom: 14,
@@ -585,7 +567,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: DS.brandNavy,
   },
-  retryBtn: {
+  deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -595,13 +577,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     flex: 1,
   },
-  retryBtnText: {
+  deleteBtnText: {
     fontSize: 14,
     fontWeight: '600',
     color: DS.textInverse,
   },
 
-  // Empty
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
