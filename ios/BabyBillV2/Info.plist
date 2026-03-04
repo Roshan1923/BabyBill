@@ -10,6 +10,8 @@
 	<string>BillBrain</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -22,6 +24,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.841045886628-8fpnck0rnopufc8pq62oidfiju85gfdd
+
+</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -35,12 +50,18 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>BillBrain needs camera access to scan receipts and documents</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>BillBrain needs photo library access to import receipts</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>BillBrain needs to save scanned receipt photos to your library</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BillBrain needs photo library access to import receipts</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Ionicons.ttf</string>
+		<string>Feather.ttf</string>
+		<string>FontAwesome.ttf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -55,15 +76,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Ionicons.ttf</string>
-		<string>Feather.ttf</string>
-
-		<string>FontAwesome.ttf</string>
-	</array>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
-
 </dict>
 </plist>
