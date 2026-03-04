@@ -3,7 +3,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
-import QuickCrypto from 'react-native-quick-crypto';
+
 import {
   View,
   Text,
