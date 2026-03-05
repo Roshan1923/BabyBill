@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { supabase } from '../config/supabase';
 import { API_URL } from '../config/api';
 import { useNotifications } from './NotificationContext';
-import RNFS from 'react-native-fs';
 
 const ProcessingContext = createContext();
 
@@ -15,29 +14,13 @@ const STATUS = {
   REVIEWED: 'reviewed',
 };
 
-/**
- * Simple hash function for image bytes (djb2 variant).
- * Reads the file, hashes the base64 string — fast and deterministic.
- */
-async function hashImageFile(photoPath) {
-  try {
-    const base64 = await RNFS.readFile(photoPath, 'base64');
-    let hash = 5381;
-    for (let i = 0; i < base64.length; i++) {
-      hash = ((hash << 5) + hash + base64.charCodeAt(i)) & 0xffffffff;
-    }
-    return hash.toString(16);
-  } catch (err) {
-    console.log('Hash error:', err);
-    return null;
-  }
-}
-
 export function ProcessingProvider({ children }) {
   const [jobs, setJobs] = useState([]);
+  const [credits, setCredits] = useState(null);
   const jobsRef = useRef([]);
   const { addNotification } = useNotifications();
 
+  // Keep ref in sync for use inside async callbacks
   const updateJobs = useCallback((updater) => {
     setJobs((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -46,39 +29,64 @@ export function ProcessingProvider({ children }) {
     });
   }, []);
 
+  // Get items for ToReview tab
   const getReviewItems = useCallback(() => {
-    return jobsRef.current.filter((j) => j.status !== STATUS.REVIEWED);
+    return jobsRef.current.filter(
+      (j) => j.status !== STATUS.REVIEWED
+    );
   }, []);
 
+  // Get count of active (non-reviewed) items
   const getPendingCount = useCallback(() => {
-    return jobsRef.current.filter((j) => j.status !== STATUS.REVIEWED).length;
+    return jobsRef.current.filter(
+      (j) => j.status !== STATUS.REVIEWED
+    ).length;
   }, []);
 
-  // ── Check for image-level duplicate (same exact photo) ──
-  const checkImageDuplicate = useCallback(async (imageHash, userId) => {
-    if (!imageHash) return false;
+  // Fetch credit balance from backend
+  const fetchCredits = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('receipts')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('image_hash', imageHash)
-        .limit(1);
-      if (!error && data && data.length > 0) return true;
-    } catch (err) {
-      console.log('Image duplicate check error:', err);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return null;
+
+      const response = await fetch(`${API_URL}/credits/balance`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        const balance = await response.json();
+        setCredits(balance);
+        return balance;
+      }
+      return null;
+    } catch (error) {
+      console.log('Failed to fetch credits:', error.message);
+      return null;
     }
-    return false;
   }, []);
 
-  // ── Start processing a batch of scans ──
+  // Helper: get session token or throw
+  const getSessionToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('No active session');
+    }
+    return session.access_token;
+  };
+
+  // Start processing a batch of scans
   const processBatch = useCallback(async (scans) => {
+    // Get current user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       console.log('ProcessingContext: No user logged in');
       return;
     }
 
+    // Create job entries for each scan
     const newJobs = scans.map((scan) => ({
       id: scan.id,
       photoPath: scan.photoPath,
@@ -88,83 +96,79 @@ export function ProcessingProvider({ children }) {
       receiptData: null,
       error: null,
       capturedAt: Date.now(),
-      imageHash: null,
     }));
 
     updateJobs((prev) => [...newJobs, ...prev]);
 
+    // Process each scan in parallel
     newJobs.forEach((job) => {
-      processOne(job, user.id);
+      processOne(job);
     });
   }, [updateJobs]);
 
-  // ── Process a single receipt ──
-  const processOne = useCallback(async (job, userId) => {
+  // Process a single receipt
+  const processOne = useCallback(async (job) => {
     try {
+      // Update status to uploading
       updateJobStatus(job.id, STATUS.UPLOADING);
 
-      // Compute image hash for duplicate detection
-      const imageHash = await hashImageFile(job.photoPath);
+      // Get session token for auth
+      const token = await getSessionToken();
 
-      // Update job with hash
-      updateJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, imageHash } : j))
-      );
-
-      // Check if this exact image was already scanned
-      if (imageHash) {
-        const isDupe = await checkImageDuplicate(imageHash, userId);
-        if (isDupe) {
-          updateJobs((prev) =>
-            prev.map((j) =>
-              j.id === job.id
-                ? {
-                    ...j,
-                    status: STATUS.FAILED,
-                    storeName: 'Duplicate Image',
-                    error: 'This exact image has already been scanned and saved.',
-                    isDuplicate: true,
-                    isImageDuplicate: true,
-                  }
-                : j
-            )
-          );
-          addNotification({
-            type: 'duplicate',
-            title: 'Duplicate Image',
-            message: 'This exact image has already been scanned.',
-            data: { jobId: job.id },
-          });
-          return;
-        }
-      }
-
-      // Build form data
+      // Build form data (no user_id — backend gets it from JWT)
       const formData = new FormData();
       formData.append('image', {
         uri: 'file://' + job.photoPath,
         type: 'image/jpeg',
         name: `receipt_${Date.now()}.jpg`,
       });
-      formData.append('user_id', userId);
-      if (imageHash) {
-        formData.append('image_hash', imageHash);
-      }
 
+      // Update status to processing
       updateJobStatus(job.id, STATUS.PROCESSING);
 
+      // Send to backend with JWT auth
       const response = await fetch(`${API_URL}/process-receipt`, {
         method: 'POST',
         body: formData,
         headers: {
           'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}`,
         },
       });
 
       const result = await response.json();
 
+      // Update credits from response if available
+      if (result.credits) {
+        setCredits((prev) => ({ ...prev, ...result.credits }));
+      }
+
+      // Credit limit reached
+      if (response.status === 403 && result.error === 'LIMIT_REACHED') {
+        updateJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id
+              ? {
+                  ...j,
+                  status: STATUS.FAILED,
+                  error: `You've used all ${result.credits_limit} scans this month. Resets ${new Date(result.period_end).toLocaleDateString()}.`,
+                  isLimitReached: true,
+                }
+              : j
+          )
+        );
+        addNotification({
+          type: 'limit_reached',
+          title: 'Scan Limit Reached',
+          message: `You've used all ${result.credits_limit} free scans this month.`,
+          data: { jobId: job.id },
+        });
+        return;
+      }
+
       if (response.ok && result.success) {
         const store = result.receipt?.store_name || 'Receipt';
+        // Success — update with receipt data
         updateJobs((prev) =>
           prev.map((j) =>
             j.id === job.id
@@ -178,6 +182,7 @@ export function ProcessingProvider({ children }) {
               : j
           )
         );
+        // Notify
         addNotification({
           type: 'receipt_ready',
           title: 'Receipt Ready',
@@ -185,6 +190,7 @@ export function ProcessingProvider({ children }) {
           data: { jobId: job.id, receipt: result.receipt },
         });
       } else if (result.duplicate) {
+        // Duplicate detected — mark as failed with clear message
         const store = result.receipt_data?.store_name || 'this store';
         const total = result.receipt_data?.total_amount || '?';
         updateJobs((prev) =>
@@ -209,6 +215,7 @@ export function ProcessingProvider({ children }) {
           data: { jobId: job.id },
         });
       } else {
+        // Backend returned error
         updateJobs((prev) =>
           prev.map((j) =>
             j.id === job.id
@@ -228,6 +235,7 @@ export function ProcessingProvider({ children }) {
         });
       }
     } catch (error) {
+      // Network or other error
       updateJobs((prev) =>
         prev.map((j) =>
           j.id === job.id
@@ -240,15 +248,16 @@ export function ProcessingProvider({ children }) {
         )
       );
     }
-  }, [updateJobs, checkImageDuplicate]);
+  }, [updateJobs]);
 
+  // Update a single job's status
   const updateJobStatus = useCallback((jobId, status) => {
     updateJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, status } : j))
     );
   }, [updateJobs]);
 
-  // ── Retry a failed job ──
+  // Retry a failed job
   const retryJob = useCallback(async (jobId) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -257,28 +266,28 @@ export function ProcessingProvider({ children }) {
     if (!job) return;
 
     updateJobStatus(jobId, STATUS.UPLOADING);
-    processOne(job, user.id);
+    processOne(job);
   }, [updateJobStatus, processOne]);
 
-  // ── Force save a duplicate receipt ──
+  // Force save a duplicate receipt
   const forceSave = useCallback(async (jobId) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
     const job = jobsRef.current.find((j) => j.id === jobId);
     if (!job || !job.isDuplicate) return;
 
     updateJobStatus(jobId, STATUS.PROCESSING);
 
     try {
+      const token = await getSessionToken();
+
       const response = await fetch(`${API_URL}/force-save-receipt`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          user_id: user.id,
           receipt_data: job.duplicateData,
           image_path: job.duplicateImagePath,
-          image_hash: job.imageHash,
         }),
       });
 
@@ -319,45 +328,19 @@ export function ProcessingProvider({ children }) {
     }
   }, [updateJobStatus, updateJobs]);
 
-  // ── Delete a job — removes from queue + cleans up uploaded image ──
-  const deleteJob = useCallback(async (jobId) => {
-    const job = jobsRef.current.find((j) => j.id === jobId);
-    if (!job) return;
-
-    // If a receipt was saved to Supabase, delete it
-    if (job.receiptData?.id) {
-      try {
-        await supabase.from('receipts').delete().eq('id', job.receiptData.id);
-      } catch (err) {
-        console.log('Error deleting receipt from DB:', err);
-      }
-    }
-
-    // If an image was uploaded to storage, delete it
-    const imagePath = job.duplicateImagePath || job.receiptData?.image_url;
-    if (imagePath) {
-      try {
-        const filePath = imagePath.replace('receipt-images/', '');
-        await supabase.storage.from('receipt-images').remove([filePath]);
-      } catch (err) {
-        console.log('Error deleting image from storage:', err);
-      }
-    }
-
-    // Remove from jobs list
-    updateJobs((prev) => prev.filter((j) => j.id !== jobId));
-  }, [updateJobs]);
-
+  // Mark a job as reviewed (moves it out of To Review)
   const markReviewed = useCallback((jobId) => {
     updateJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, status: STATUS.REVIEWED } : j))
     );
   }, [updateJobs]);
 
+  // Remove a job entirely
   const removeJob = useCallback((jobId) => {
     updateJobs((prev) => prev.filter((j) => j.id !== jobId));
   }, [updateJobs]);
 
+  // Clear all reviewed jobs
   const clearReviewed = useCallback(() => {
     updateJobs((prev) => prev.filter((j) => j.status !== STATUS.REVIEWED));
   }, [updateJobs]);
@@ -366,15 +349,16 @@ export function ProcessingProvider({ children }) {
     <ProcessingContext.Provider
       value={{
         jobs,
+        credits,
         getReviewItems,
         getPendingCount,
         processBatch,
         retryJob,
         forceSave,
-        deleteJob,
         markReviewed,
         removeJob,
         clearReviewed,
+        fetchCredits,
         STATUS,
       }}
     >

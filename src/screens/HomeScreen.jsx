@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
   RefreshControl,
   Image,
   Alert,
+  Modal,
+  TouchableWithoutFeedback,
 } from "react-native";
 import Icon from "react-native-vector-icons/Feather";
 import Ionicons from "react-native-vector-icons/Ionicons";
@@ -47,8 +49,9 @@ const CARD_WIDTH = SCREEN_WIDTH * 0.78;
 const CARD_HEIGHT = 230;
 const CARD_GAP = 14;
 const RECENT_RECEIPT_LIMIT = 4;
+const TOPUP_OPTIONS = [0, 25, 50, 75, 100];
 
-// ─── Category Helpers (dynamic with fallback) ────────────────
+// ─── Category Helpers ────────────────────────────────────────
 const FALLBACK_ICON = "receipt-outline";
 const FALLBACK_COLOR = "#8A7E72";
 
@@ -138,9 +141,208 @@ function formatReceiptTime(receipt) {
   return isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-// ─── Header (with live bell badge) ───────────────────────────
+// ─── Credit Helpers ──────────────────────────────────────────
 
-function HeaderRow({ userName = "User", navigation }) {
+function getTotalCredits(credits) {
+  if (!credits) return { remaining: 10, total: 10 };
+  const { is_active, free_remaining, sub_remaining, sub_limit, topup_remaining } = credits;
+  if (is_active) {
+    return {
+      remaining: sub_remaining + topup_remaining,
+      total: Math.max(sub_limit, sub_limit + topup_remaining),
+    };
+  }
+  return {
+    remaining: free_remaining + topup_remaining,
+    total: 10 + topup_remaining,
+  };
+}
+
+function isCreditLow(remaining, total) {
+  if (total === 0) return false;
+  return remaining / total <= 0.2 || remaining <= 3;
+}
+
+// ─── Credit Pill + Popup ─────────────────────────────────────
+
+function CreditPill({ credits, onBuyNow, onViewPlans }) {
+  const [open, setOpen] = useState(false);
+  const [pillLayout, setPillLayout] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [selectedTopup, setSelectedTopup] = useState(25);
+  const pillRef = useRef(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.92)).current;
+
+  const { remaining, total } = getTotalCredits(credits);
+  const low = isCreditLow(remaining, total);
+  const empty = remaining === 0;
+  const pillBg = empty ? "#E53935" : low ? DS.accentGold : DS.brandNavy;
+
+  useEffect(() => {
+    if (open) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, tension: 280, friction: 22, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 0, duration: 130, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.92, duration: 130, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [open]);
+
+  const handlePillPress = () => {
+    pillRef.current?.measure((fx, fy, width, height, px, py) => {
+      setPillLayout({ x: px, y: py, width, height });
+      setOpen(true);
+    });
+  };
+
+  const handleClose = () => setOpen(false);
+
+  const handleBuyNow = () => {
+    handleClose();
+    onBuyNow && onBuyNow(selectedTopup);
+  };
+
+  const handleViewPlans = () => {
+    handleClose();
+    onViewPlans && onViewPlans();
+  };
+
+  const popupWidth = 248;
+  const popupLeft = Math.min(
+    pillLayout.x + pillLayout.width - popupWidth,
+    SCREEN_WIDTH - popupWidth - 16
+  );
+  const popupTop = pillLayout.y + pillLayout.height + 10;
+
+  // Caret x position relative to popup
+  const caretRight = Math.max(
+    8,
+    popupLeft + popupWidth - (pillLayout.x + pillLayout.width / 2) - 6
+  );
+
+  const barPercent = total > 0 ? (remaining / total) * 100 : 0;
+  const barColor = empty ? "#E53935" : low ? DS.accentGold : DS.brandNavy;
+
+  return (
+    <>
+      <TouchableOpacity
+        ref={pillRef}
+        onPress={handlePillPress}
+        activeOpacity={0.8}
+        style={[styles.creditPill, { backgroundColor: pillBg }]}
+      >
+        <Ionicons name="flash" size={12} color="#FFFEFB" style={{ marginRight: 4 }} />
+        <Text style={styles.creditPillText}>{remaining}/{total}</Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="none"
+        onRequestClose={handleClose}
+        statusBarTranslucent
+      >
+        <TouchableWithoutFeedback onPress={handleClose}>
+          <View style={styles.creditBackdrop} />
+        </TouchableWithoutFeedback>
+
+        <Animated.View
+          style={[
+            styles.creditPopup,
+            {
+              left: popupLeft,
+              top: popupTop,
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }],
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          {/* Caret */}
+          <View style={[styles.creditCaret, { right: caretRight }]} />
+
+          {/* Header */}
+          <View style={styles.creditPopupHeader}>
+            <View>
+              <Text style={styles.creditPopupTitle}>Scan Credits</Text>
+              <Text style={styles.creditPopupSub}>{remaining} of {total} remaining</Text>
+            </View>
+            {empty ? (
+              <View style={[styles.creditBadge, { backgroundColor: "#FDECEA" }]}>
+                <Text style={[styles.creditBadgeText, { color: "#E53935" }]}>Empty</Text>
+              </View>
+            ) : low ? (
+              <View style={styles.creditBadge}>
+                <Text style={styles.creditBadgeText}>Low</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Usage bar */}
+          <View style={styles.creditBarTrack}>
+            <View style={[styles.creditBarFill, { width: `${barPercent}%`, backgroundColor: barColor }]} />
+          </View>
+
+          <View style={styles.creditDivider} />
+
+          {/* Add credits label */}
+          <Text style={styles.creditAddLabel}>Add Credits</Text>
+
+          {/* Topup chips */}
+          <View style={styles.creditChipsRow}>
+            {TOPUP_OPTIONS.map((val) => (
+              <TouchableOpacity
+                key={val}
+                onPress={() => setSelectedTopup(val)}
+                activeOpacity={0.7}
+                style={[
+                  styles.creditChip,
+                  selectedTopup === val && styles.creditChipActive,
+                  val === 0 && styles.creditChipZero,
+                ]}
+              >
+                <Text style={[
+                  styles.creditChipText,
+                  selectedTopup === val && styles.creditChipTextActive,
+                  val === 0 && styles.creditChipTextZero,
+                ]}>
+                  {val === 0 ? "✕" : `+${val}`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Buy Now */}
+          <TouchableOpacity
+            onPress={handleBuyNow}
+            activeOpacity={0.85}
+            disabled={selectedTopup === 0}
+            style={[styles.creditBuyBtn, selectedTopup === 0 && styles.creditBuyBtnDisabled]}
+          >
+            <Ionicons name="flash" size={13} color="#FFFEFB" style={{ marginRight: 6 }} />
+            <Text style={styles.creditBuyBtnText}>
+              {selectedTopup === 0 ? "Select an amount" : `Buy +${selectedTopup} Credits`}
+            </Text>
+          </TouchableOpacity>
+
+          {/* View Plans */}
+          <TouchableOpacity onPress={handleViewPlans} activeOpacity={0.7} style={styles.creditPlansLink}>
+            <Text style={styles.creditPlansLinkText}>View subscription plans</Text>
+            <Ionicons name="chevron-forward" size={11} color={DS.brandNavy} />
+          </TouchableOpacity>
+        </Animated.View>
+      </Modal>
+    </>
+  );
+}
+
+// ─── Header (with CreditPill + bell) ─────────────────────────
+
+function HeaderRow({ userName = "User", navigation, credits }) {
   const bellAnim = useRef(new Animated.Value(0)).current;
   const { unreadCount } = useNotifications();
 
@@ -159,35 +361,49 @@ function HeaderRow({ userName = "User", navigation }) {
   return (
     <View style={styles.headerRow}>
       <View style={styles.headerLeft}>
-        <Image
-          source={BillBrainIcon}
-          style={styles.avatarLogo}
-          resizeMode="contain"
-        />
+        <Image source={BillBrainIcon} style={styles.avatarLogo} resizeMode="contain" />
         <View style={styles.headerTextBlock}>
           <Text style={styles.welcomeText}>Welcome back,</Text>
           <Text style={styles.userName}>{userName}</Text>
         </View>
       </View>
-      <TouchableOpacity
-        style={styles.bellContainer}
-        activeOpacity={0.7}
-        onPress={() => {
-          ringBell();
-          navigation.navigate("Notifications");
-        }}
-      >
-        <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-          <Icon name="bell" size={20} color={DS.textPrimary} />
-        </Animated.View>
-        {unreadCount > 0 && (
-          <View style={styles.bellBadge}>
-            <Text style={styles.bellBadgeText}>
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
+
+      {/* Right side: CreditPill + Bell */}
+      <View style={styles.headerRight}>
+        <CreditPill
+          credits={credits}
+          onBuyNow={(amount) => {
+            // TODO: wire to RevenueCat top-up purchase flow
+            // navigation.navigate('Paywall', { topup: amount })
+            Alert.alert("Top Up", `Purchase +${amount} credits — RevenueCat flow coming soon.`);
+          }}
+          onViewPlans={() => {
+            // TODO: navigate to Paywall screen
+            // navigation.navigate('Paywall')
+            Alert.alert("Plans", "Subscription plans screen coming soon.");
+          }}
+        />
+
+        <TouchableOpacity
+          style={styles.bellContainer}
+          activeOpacity={0.7}
+          onPress={() => {
+            ringBell();
+            navigation.navigate("Notifications");
+          }}
+        >
+          <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+            <Icon name="bell" size={20} color={DS.textPrimary} />
+          </Animated.View>
+          {unreadCount > 0 && (
+            <View style={styles.bellBadge}>
+              <Text style={styles.bellBadgeText}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -218,19 +434,9 @@ function SpendingCard({ receipts, period, onPeriodChange }) {
         </View>
         <Text style={styles.spendLabel}>Total Spending</Text>
         <View style={styles.amountRow}>
-          <Text style={styles.spendAmount}>
-            {amountVisible ? data.total : '••••••'}
-          </Text>
-          <TouchableOpacity
-            onPress={() => setAmountVisible(!amountVisible)}
-            activeOpacity={0.6}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons
-              name={amountVisible ? 'eye-outline' : 'eye-off-outline'}
-              size={18}
-              color={DS.textSecondary}
-            />
+          <Text style={styles.spendAmount}>{amountVisible ? data.total : '••••••'}</Text>
+          <TouchableOpacity onPress={() => setAmountVisible(!amountVisible)} activeOpacity={0.6} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name={amountVisible ? 'eye-outline' : 'eye-off-outline'} size={18} color={DS.textSecondary} />
           </TouchableOpacity>
         </View>
         <View style={styles.cardMetaRow}>
@@ -306,56 +512,36 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
       </View>
     );
   }
-
   if (readyJobs > 0) {
     return (
-      <TouchableOpacity
-        style={[styles.pendingBar, { backgroundColor: DS.accentGoldSub }]}
-        onPress={() => navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } })}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={[styles.pendingBar, { backgroundColor: DS.accentGoldSub }]} onPress={() => navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } })} activeOpacity={0.7}>
         <Ionicons name="eye-outline" size={18} color={DS.accentGold} />
-        <Text style={[styles.pendingTxt, { color: '#B8860B', flex: 1 }]}>
-          {readyJobs} receipt{readyJobs > 1 ? 's' : ''} ready to review
-        </Text>
+        <Text style={[styles.pendingTxt, { color: '#B8860B', flex: 1 }]}>{readyJobs} receipt{readyJobs > 1 ? 's' : ''} ready to review</Text>
         <Icon name="chevron-right" size={16} color="#B8860B" />
       </TouchableOpacity>
     );
   }
-
   if (activeJobs > 0) {
     return (
       <View style={[styles.pendingBar, { backgroundColor: DS.accentGoldSub }]}>
         <Ionicons name="time-outline" size={18} color={DS.accentGold} />
-        <Text style={[styles.pendingTxt, { color: '#B8860B' }]}>
-          {activeJobs} receipt{activeJobs > 1 ? 's' : ''} processing…
-        </Text>
+        <Text style={[styles.pendingTxt, { color: '#B8860B' }]}>{activeJobs} receipt{activeJobs > 1 ? 's' : ''} processing…</Text>
       </View>
     );
   }
-
   if (failedJobs > 0) {
     return (
-      <TouchableOpacity
-        style={[styles.pendingBar, { backgroundColor: '#FDF2EF' }]}
-        onPress={() => navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } })}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={[styles.pendingBar, { backgroundColor: '#FDF2EF' }]} onPress={() => navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } })} activeOpacity={0.7}>
         <Ionicons name="alert-circle-outline" size={18} color={DS.negative} />
-        <Text style={[styles.pendingTxt, { color: DS.negative, flex: 1 }]}>
-          {failedJobs} receipt{failedJobs > 1 ? 's' : ''} failed
-        </Text>
+        <Text style={[styles.pendingTxt, { color: DS.negative, flex: 1 }]}>{failedJobs} receipt{failedJobs > 1 ? 's' : ''} failed</Text>
         <Icon name="chevron-right" size={16} color={DS.negative} />
       </TouchableOpacity>
     );
   }
-
   return (
     <View style={[styles.pendingBar, { backgroundColor: DS.accentGoldSub }]}>
       <Ionicons name="time-outline" size={18} color={DS.accentGold} />
-      <Text style={[styles.pendingTxt, { color: '#B8860B' }]}>
-        {totalPending} receipt{totalPending > 1 ? 's' : ''} pending
-      </Text>
+      <Text style={[styles.pendingTxt, { color: '#B8860B' }]}>{totalPending} receipt{totalPending > 1 ? 's' : ''} pending</Text>
     </View>
   );
 }
@@ -376,34 +562,25 @@ function ActionButtons({ navigation }) {
       'photoLibrary',
       ({ title, message, showSettingsButton }) => {
         if (showSettingsButton) {
-          Alert.alert(title, message, [
-            { text: 'Cancel' },
-            { text: 'Settings', onPress: openAppSettings },
-          ]);
+          Alert.alert(title, message, [{ text: 'Cancel' }, { text: 'Settings', onPress: openAppSettings }]);
         } else {
           Alert.alert(title, message);
         }
       }
     );
     if (!granted) return;
-
-    launchImageLibrary(
-      { mediaType: "photo", quality: 1, selectionLimit: 0 },
-      (response) => {
-        if (response.didCancel || response.errorCode) return;
-        const assets = response.assets;
-        if (assets && assets.length > 0) {
-          const batch = assets.map((asset, index) => ({
-            id: `upload_${Date.now()}_${index}`,
-            photoPath: asset.uri.startsWith("file://")
-              ? asset.uri.replace("file://", "")
-              : asset.uri,
-          }));
-          processBatch(batch);
-          navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
-        }
+    launchImageLibrary({ mediaType: "photo", quality: 1, selectionLimit: 0 }, (response) => {
+      if (response.didCancel || response.errorCode) return;
+      const assets = response.assets;
+      if (assets && assets.length > 0) {
+        const batch = assets.map((asset, index) => ({
+          id: `upload_${Date.now()}_${index}`,
+          photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
+        }));
+        processBatch(batch);
+        navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
       }
-    );
+    });
   };
 
   return (
@@ -517,42 +694,52 @@ export default function HomeScreen({ navigation }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [profile, setProfile] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [credits, setCredits] = useState(null);
+
+  const { fetchCredits } = useProcessing();
+
+  const loadCredits = useCallback(async () => {
+    try {
+      const data = await fetchCredits();
+      if (data) setCredits(data);
+    } catch (err) {
+      console.error("Failed to load credits:", err);
+    }
+  }, [fetchCredits]);
 
   const fetchReceipts = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setReceipts([]);
-        return;
-      }
+      if (!user) { setReceipts([]); return; }
 
       const { data: profileData } = await supabase
-        .from("profiles")
-        .select("first_name, last_name")
-        .eq("id", user.id)
-        .single();
+        .from("profiles").select("first_name, last_name").eq("id", user.id).single();
       if (profileData) setProfile(profileData);
 
       const { data: catData } = await supabase
-        .from("user_categories")
-        .select("name, icon, color")
-        .eq("user_id", user.id);
+        .from("user_categories").select("name, icon, color").eq("user_id", user.id);
       if (catData && catData.length > 0) setCategories(catData);
 
       const { data, error } = await supabase.from("receipts").select("*").eq("user_id", user.id).order("date", { ascending: false, nullsFirst: false });
       if (error) { console.error("Error fetching receipts:", error); return; }
       setReceipts(data || []);
 
-      const pending = (data || []).filter(
-        (r) => r.status && r.status.toLowerCase() === "pending"
-      ).length;
+      const pending = (data || []).filter((r) => r.status && r.status.toLowerCase() === "pending").length;
       setPendingCount(pending);
-    } catch (err) { console.error("Fetch error:", err); } finally { setLoading(false); setRefreshing(false); }
+    } catch (err) { console.error("Fetch error:", err); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchReceipts(); }, [fetchReceipts]));
-  const onRefresh = useCallback(() => fetchReceipts(true), [fetchReceipts]);
+  useFocusEffect(useCallback(() => {
+    fetchReceipts();
+    loadCredits();
+  }, [fetchReceipts, loadCredits]));
+
+  const onRefresh = useCallback(() => {
+    fetchReceipts(true);
+    loadCredits();
+  }, [fetchReceipts, loadCredits]);
 
   const topMerchants = useMemo(() => computeTopMerchants(receipts), [receipts]);
   const recentReceipts = useMemo(() => receipts.slice(0, RECENT_RECEIPT_LIMIT).map((r) => ({
@@ -565,11 +752,14 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-      <ScrollView style={styles.mainScroll} contentContainerStyle={styles.mainScrollContent}
-        showsVerticalScrollIndicator={false} bounces={true}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DS.brandNavy} colors={[DS.brandNavy]} />}>
-
-        <HeaderRow userName={profile?.first_name || "User"} navigation={navigation} />
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainScrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={DS.brandNavy} colors={[DS.brandNavy]} />}
+      >
+        <HeaderRow userName={profile?.first_name || "User"} navigation={navigation} credits={credits} />
         <Text style={styles.pageTitle}>Overview</Text>
 
         {loading ? (
@@ -580,8 +770,7 @@ export default function HomeScreen({ navigation }) {
         ) : (
           <>
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
+              horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.carousel}
               decelerationRate="fast"
               snapToInterval={CARD_WIDTH + CARD_GAP}
@@ -625,9 +814,7 @@ export default function HomeScreen({ navigation }) {
         activeTab={activeTab}
         onTabPress={(tab) => {
           setActiveTab(tab);
-          if (tab !== "Home") {
-            navigation.navigate(tab);
-          }
+          if (tab !== "Home") navigation.navigate(tab);
         }}
       />
     </SafeAreaView>
@@ -639,15 +826,17 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: DS.bgPage },
   mainScroll: { flex: 1 },
-  mainScrollContent: { paddingHorizontal: DS.pagePad, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12, paddingBottom: DS.navHeight + 24 },
+  mainScrollContent: {
+    paddingHorizontal: DS.pagePad,
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12,
+    paddingBottom: DS.navHeight + 24,
+  },
 
+  // Header
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLeft: { flexDirection: "row", alignItems: "center" },
-  avatarLogo: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
-  },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  avatarLogo: { width: 60, height: 60, borderRadius: 12 },
   headerTextBlock: { marginLeft: 10 },
   welcomeText: { fontSize: 12, fontWeight: "400", color: DS.textSecondary },
   userName: { fontSize: 16, fontWeight: "600", color: DS.textPrimary, marginTop: 1 },
@@ -663,15 +852,90 @@ const styles = StyleSheet.create({
   },
   bellBadgeText: { fontSize: 10, fontWeight: "800", color: DS.textInverse },
 
-  pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3, marginTop: 2, marginBottom: 12 },
+  // Credit Pill
+  creditPill: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: 20,
+  },
+  creditPillText: { color: "#FFFEFB", fontSize: 12, fontWeight: "600", letterSpacing: 0.2 },
 
+  // Credit Backdrop
+  creditBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.32)",
+  },
+
+  // Credit Popup
+  creditPopup: {
+    position: "absolute",
+    width: 248,
+    backgroundColor: DS.bgSurface,
+    borderRadius: 16,
+    padding: 16,
+    ...Platform.select({
+      ios: { shadowColor: "rgba(26,58,107,0.22)", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 24 },
+      android: { elevation: 16 },
+    }),
+  },
+  creditCaret: {
+    position: "absolute",
+    top: -6,
+    width: 12, height: 12,
+    backgroundColor: DS.bgSurface,
+    transform: [{ rotate: "45deg" }],
+    borderRadius: 2,
+  },
+  creditPopupHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 },
+  creditPopupTitle: { fontSize: 14, fontWeight: "600", color: DS.brandNavy },
+  creditPopupSub: { fontSize: 11, color: DS.textSecondary, marginTop: 2 },
+  creditBadge: { backgroundColor: "#FFF8EC", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  creditBadgeText: { fontSize: 10, fontWeight: "600", color: DS.accentGold },
+
+  creditBarTrack: { height: 5, backgroundColor: "#EEF0F3", borderRadius: 10, overflow: "hidden", marginBottom: 14 },
+  creditBarFill: { height: "100%", borderRadius: 10 },
+
+  creditDivider: { height: 1, backgroundColor: "#F0F0ED", marginBottom: 12 },
+
+  creditAddLabel: {
+    fontSize: 10, fontWeight: "600", color: DS.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 10,
+  },
+
+  creditChipsRow: { flexDirection: "row", gap: 5, marginBottom: 14 },
+  creditChip: {
+    flex: 1, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: DS.bgSurface2, alignItems: "center", justifyContent: "center",
+  },
+  creditChipActive: { backgroundColor: DS.brandNavy },
+  creditChipZero: { flex: 0, width: 34 },
+  creditChipText: { fontSize: 12, fontWeight: "600", color: DS.brandNavy },
+  creditChipTextActive: { color: "#FFFEFB" },
+  creditChipTextZero: { color: "#B0B8C4", fontSize: 13 },
+
+  creditBuyBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: DS.accentGold, borderRadius: 12, paddingVertical: 11, marginBottom: 10,
+  },
+  creditBuyBtnDisabled: { backgroundColor: "#D0D4DA" },
+  creditBuyBtnText: { color: "#FFFEFB", fontSize: 13, fontWeight: "600" },
+
+  creditPlansLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
+  creditPlansLinkText: {
+    fontSize: 11, fontWeight: "500", color: DS.brandNavy,
+    textDecorationLine: "underline", textDecorationStyle: "dotted",
+  },
+
+  // Page
+  pageTitle: { fontSize: 26, fontWeight: "700", color: DS.textPrimary, letterSpacing: -0.3, marginTop: 2, marginBottom: 12 },
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
   loadingText: { fontSize: 14, color: DS.textSecondary, marginTop: 12 },
 
+  // Cards
   carousel: { paddingRight: DS.pagePad },
   card: {
-    width: CARD_WIDTH, height: CARD_HEIGHT, overflow: "hidden", backgroundColor: DS.bgSurface, borderRadius: DS.cardRadius,
-    marginRight: CARD_GAP, borderWidth: 1, borderColor: DS.border,
+    width: CARD_WIDTH, height: CARD_HEIGHT, overflow: "hidden", backgroundColor: DS.bgSurface,
+    borderRadius: DS.cardRadius, marginRight: CARD_GAP, borderWidth: 1, borderColor: DS.border,
     ...Platform.select({ ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 }, android: { elevation: 0 } }),
   },
   cardInner: { paddingHorizontal: DS.cardPad, paddingTop: 16, paddingBottom: 14, flex: 1, justifyContent: "space-between" },
