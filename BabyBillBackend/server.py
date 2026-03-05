@@ -1,9 +1,10 @@
 import os
 import re
 import json
-import base64
+import uuid
 import httpx
 import io
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -78,8 +79,7 @@ def clean_last_four(val):
 
 
 def normalize_rpc_uuid(result):
-    """Normalize Supabase RPC response to a UUID string or None.
-    Handles scalar, list, or dict responses."""
+    """Normalize Supabase RPC response to a UUID string or None."""
     if not result:
         return None
     if isinstance(result, str):
@@ -95,6 +95,24 @@ def normalize_rpc_uuid(result):
     return None
 
 
+def is_valid_uuid(val):
+    """Check if a string is a valid UUID."""
+    try:
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+def _ms_to_iso(ms):
+    """Convert milliseconds timestamp to ISO 8601 string."""
+    try:
+        dt = datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc)
+        return dt.isoformat()
+    except Exception:
+        return None
+
+
 #-----------------------------------------------------------------------------------------------
 # --- Clients ---
 azure_client = DocumentAnalysisClient(
@@ -108,11 +126,27 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
+# RevenueCat webhook secret (set in Render env vars)
+RC_WEBHOOK_SECRET = os.getenv("RC_WEBHOOK_SECRET")
+
 # HTTP timeout for all Supabase calls (seconds)
 HTTP_TIMEOUT = 15.0
 
 # Fallback categories if fetching user categories fails
 DEFAULT_CATEGORIES = ["Food", "Bills", "Gas", "Shopping", "Medical", "Other"]
+
+# RevenueCat product ID → tier and credit limit mapping
+RC_PRODUCT_MAP = {
+     "billbrain_essential_monthly": {"tier": "essential", "sub_limit": 100},
+    "billbrain_premium_monthly": {"tier": "premium", "sub_limit": 250},
+}
+
+# RevenueCat top-up product ID → credit amount mapping
+RC_TOPUP_MAP = {
+    "billbrain_topup_25": 25,
+    "billbrain_topup_50": 50,
+    "billbrain_topup_100": 100,
+}
 
 # ── Supabase header helpers ──
 
@@ -168,10 +202,10 @@ def verify_supabase_token(req):
 
 
 #-----------------------------------------------------------------------------------------------
-# ── Credits: Consume / Refund / Balance ──
+# ── Credits: Consume / Refund / Balance / Top-up ──
 
 def consume_credit(user_id):
-    """Call the consume_credit RPC. Returns the result dict."""
+    """Call the consume_credit RPC. Returns the result dict including charged_bucket."""
     try:
         response = httpx.post(
             f"{SUPABASE_URL}/rest/v1/rpc/consume_credit",
@@ -191,19 +225,22 @@ def consume_credit(user_id):
         return {"success": False, "error": "CREDIT_CHECK_FAILED"}
 
 
-def refund_credit(user_id):
-    """Call the refund_credit RPC. Used only for system errors."""
+def refund_credit(user_id, bucket):
+    """Call the refund_credit RPC with the specific bucket to refund to."""
+    if bucket == "unlimited":
+        return {"success": True}
+
     try:
         response = httpx.post(
             f"{SUPABASE_URL}/rest/v1/rpc/refund_credit",
             headers=service_headers(),
-            json={"p_user_id": user_id},
+            json={"p_user_id": user_id, "p_bucket": bucket},
             timeout=HTTP_TIMEOUT,
         )
 
         if response.status_code == 200:
             result = response.json()
-            print(f"🔄 Credit refunded for user {user_id}")
+            print(f"🔄 Credit refunded to '{bucket}' bucket for user {user_id}")
             return result
         else:
             print(f"⚠️ refund_credit RPC error: {response.status_code} - {response.text}")
@@ -214,8 +251,29 @@ def refund_credit(user_id):
         return None
 
 
+def add_topup(user_id, amount):
+    """Call the add_topup RPC to atomically add top-up credits."""
+    try:
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/add_topup",
+            headers=service_headers(),
+            json={"p_user_id": user_id, "p_amount": amount},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"⚠️ add_topup RPC error: {response.status_code} - {response.text}")
+            return {"success": False, "error": "TOPUP_FAILED"}
+
+    except Exception as e:
+        print(f"⚠️ add_topup error: {str(e)}")
+        return {"success": False, "error": "TOPUP_FAILED"}
+
+
 def get_credit_balance(user_id):
-    """Call the get_credit_balance RPC. Resets period if expired, does not consume."""
+    """Call the get_credit_balance RPC."""
     try:
         response = httpx.post(
             f"{SUPABASE_URL}/rest/v1/rpc/get_credit_balance",
@@ -233,6 +291,86 @@ def get_credit_balance(user_id):
     except Exception as e:
         print(f"⚠️ get_credit_balance error: {str(e)}")
         return None
+
+
+def build_credits_response(credit_result):
+    """Build a standardized credits object for API responses."""
+    return {
+        "tier": credit_result.get("tier"),
+        "is_active": credit_result.get("is_active"),
+        "free_remaining": credit_result.get("free_remaining"),
+        "sub_remaining": credit_result.get("sub_remaining"),
+        "sub_limit": credit_result.get("sub_limit"),
+        "topup_remaining": credit_result.get("topup_remaining"),
+        "sub_period_end": credit_result.get("sub_period_end"),
+    }
+
+
+#-----------------------------------------------------------------------------------------------
+# ── RevenueCat Webhook Helpers ──
+
+def verify_rc_webhook(req):
+    """Verify RevenueCat webhook authenticity via Authorization header."""
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not RC_WEBHOOK_SECRET:
+        return False
+    expected = f"Bearer {RC_WEBHOOK_SECRET}"
+    return auth_header == expected
+
+
+def try_store_webhook_event(event_id, event_type, rc_app_user_id, user_id, payload):
+    """Attempt to insert webhook event BEFORE processing.
+    Returns True if inserted (new event), False if already exists (duplicate).
+    This is the idempotency-first pattern."""
+    try:
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/webhook_events",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            json={
+                "event_id": event_id,
+                "event_type": event_type,
+                "rc_app_user_id": rc_app_user_id,
+                "user_id": user_id,
+                "payload": payload,
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code in [200, 201, 204]:
+            return True  # New event, proceed with processing
+        elif response.status_code == 409:
+            return False  # Duplicate — PK conflict
+        else:
+            # Check if it's a unique violation in the response body
+            body = response.text or ""
+            if "duplicate" in body.lower() or "unique" in body.lower() or "23505" in body:
+                return False
+            print(f"⚠️ Unexpected webhook_events insert status: {response.status_code} - {body}")
+            return False  # Don't process if we can't guarantee idempotency
+
+    except Exception as e:
+        print(f"⚠️ Failed to store webhook event: {str(e)}")
+        return False  # Don't process — RC will retry and hopefully storage works next time
+
+
+def update_user_credits(user_id, updates):
+    """Update user_credits row with the given fields.
+    Note: updated_at is handled by DB trigger, never sent from here."""
+    try:
+        response = httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/user_credits",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={"user_id": f"eq.{user_id}"},
+            json=updates,
+            timeout=HTTP_TIMEOUT,
+        )
+        if response.status_code not in [200, 204]:
+            print(f"⚠️ update_user_credits failed: {response.status_code} - {response.text}")
+            return False
+        return True
+    except Exception as e:
+        print(f"⚠️ update_user_credits error: {str(e)}")
+        return False
 
 
 #-----------------------------------------------------------------------------------------------
@@ -608,6 +746,7 @@ def upload_image_to_supabase(image_bytes, filename):
 def process_receipt():
     """Main endpoint: receives image, runs OCR + GPT, saves to Supabase."""
     credit_consumed = False
+    charged_bucket = None
     user_id = None
 
     try:
@@ -641,17 +780,12 @@ def process_receipt():
             print(f"🚫 Credit check failed: {error_code}")
             return jsonify({
                 "error": error_code,
-                "credits_used": credit_result.get("credits_used"),
-                "credits_limit": credit_result.get("credits_limit"),
-                "remaining": credit_result.get("remaining", 0),
-                "period_end": credit_result.get("period_end"),
-                "tier": credit_result.get("tier"),
+                "credits": build_credits_response(credit_result),
             }), 403
 
         credit_consumed = True
-        is_unlimited = credit_result.get("unlimited", False)
-        print(f"✅ Credit consumed — used: {credit_result.get('credits_used')}/{credit_result.get('credits_limit')}"
-              + (" (unlimited)" if is_unlimited else f" remaining: {credit_result.get('remaining')}"))
+        charged_bucket = credit_result.get("charged_bucket", "unknown")
+        print(f"✅ Credit consumed from '{charged_bucket}' bucket")
 
         # ── Step 2: Upload image to Supabase Storage ──
         print("☁️ Uploading image to Supabase...")
@@ -704,12 +838,7 @@ def process_receipt():
                     "receipt_data": receipt_data,
                     "image_path": image_path,
                     "message": "Duplicate receipt detected",
-                    "credits": {
-                        "credits_used": credit_result.get("credits_used"),
-                        "credits_limit": credit_result.get("credits_limit"),
-                        "remaining": credit_result.get("remaining"),
-                        "unlimited": is_unlimited,
-                    },
+                    "credits": build_credits_response(credit_result),
                 }), 200
 
         # ── Step 7: Save to Supabase Database ──
@@ -721,27 +850,22 @@ def process_receipt():
             return jsonify({
                 "success": True,
                 "receipt": saved[0] if isinstance(saved, list) else saved,
-                "credits": {
-                    "credits_used": credit_result.get("credits_used"),
-                    "credits_limit": credit_result.get("credits_limit"),
-                    "remaining": credit_result.get("remaining"),
-                    "unlimited": is_unlimited,
-                },
+                "credits": build_credits_response(credit_result),
             }), 200
         else:
             raise SystemError("Failed to save receipt to database")
 
     except SystemError as e:
         print(f"❌ System error (refunding credit): {str(e)}")
-        if credit_consumed and user_id:
-            refund_credit(user_id)
+        if credit_consumed and user_id and charged_bucket:
+            refund_credit(user_id, charged_bucket)
         return jsonify({"error": str(e)}), 500
 
     except Exception as e:
         print(f"❌ Unexpected error: {str(e)}")
-        if credit_consumed and user_id:
-            refund_credit(user_id)
-            print(f"🔄 Credit refunded due to unexpected error")
+        if credit_consumed and user_id and charged_bucket:
+            refund_credit(user_id, charged_bucket)
+            print(f"🔄 Credit refunded to '{charged_bucket}' due to unexpected error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -784,8 +908,7 @@ def force_save_receipt():
 
 @app.route("/credits/balance", methods=["GET"])
 def credits_balance():
-    """Return the current credit balance for the authenticated user.
-    Resets period if expired (via RPC)."""
+    """Return the current credit balance for the authenticated user."""
     user_id, auth_error = verify_supabase_token(request)
     if not user_id:
         return jsonify({"error": auth_error or "Authentication required"}), 401
@@ -795,6 +918,166 @@ def credits_balance():
         return jsonify(balance), 200
     else:
         return jsonify({"error": "Could not fetch credit balance"}), 500
+
+
+#-----------------------------------------------------------------------------------------------
+# ── RevenueCat Webhook ──
+
+@app.route("/billing/revenuecat/webhook", methods=["POST"])
+def revenuecat_webhook():
+    """Handle RevenueCat webhook events for subscriptions and top-ups.
+
+    Events handled:
+      INITIAL_PURCHASE        — new subscription started
+      RENEWAL                 — subscription renewed for a new period
+      PRODUCT_CHANGE          — upgrade or downgrade
+      CANCELLATION            — user cancelled (still active until period end)
+      UNCANCELLATION          — user re-enabled auto-renew before expiry
+      EXPIRATION              — subscription period ended
+      NON_RENEWING_PURCHASE   — top-up purchased
+      BILLING_ISSUE           — payment failed, Apple/Google retrying
+      SUBSCRIPTION_PAUSED     — (log only)
+    """
+
+    # ── Verify webhook authenticity ──
+    if not verify_rc_webhook(request):
+        print("🚫 Webhook auth failed — rejected")
+        return jsonify({"error": "Unauthorized"}), 401
+
+    payload = request.get_json()
+    if not payload or "event" not in payload:
+        return jsonify({"error": "Invalid payload"}), 400
+
+    event = payload["event"]
+    event_type = event.get("type", "UNKNOWN")
+    event_id = event.get("id")
+    rc_app_user_id = event.get("app_user_id")
+
+    print(f"📨 RevenueCat webhook: {event_type} | rc_user: {rc_app_user_id} | event_id: {event_id}")
+
+    # ── Validate app_user_id is a real UUID (not anonymous RC ID) ──
+    if not rc_app_user_id or not is_valid_uuid(rc_app_user_id):
+        print(f"⚠️ Ignoring event — app_user_id is not a valid UUID: {rc_app_user_id}")
+        return jsonify({"status": "ignored_anonymous_user"}), 200
+
+    user_id = rc_app_user_id
+
+    # ── Require event_id for idempotency ──
+    if not event_id:
+        print(f"⚠️ No event_id in webhook — cannot guarantee idempotency, skipping")
+        return jsonify({"status": "skipped_no_event_id"}), 200
+
+    # ── Idempotency: store event BEFORE processing ──
+    is_new = try_store_webhook_event(event_id, event_type, rc_app_user_id, user_id, payload)
+    if not is_new:
+        print(f"⏭️ Event {event_id} already processed or storage failed — skipping")
+        return jsonify({"status": "already_processed"}), 200
+
+    # ── Extract common fields (correct RevenueCat field names) ──
+    product_id = event.get("product_id", "")
+
+    # RevenueCat uses purchased_at_ms and expiration_at_ms
+    sub_period_start = _ms_to_iso(event.get("purchased_at_ms"))
+    sub_period_end = _ms_to_iso(event.get("expiration_at_ms"))
+
+    # ── Handle events ──
+    try:
+        if event_type in ("INITIAL_PURCHASE", "RENEWAL"):
+            product_info = RC_PRODUCT_MAP.get(product_id)
+            if product_info:
+                tier = product_info["tier"]
+                sub_limit = product_info["sub_limit"]
+
+                updates = {
+                    "tier": tier,
+                    "is_active": True,
+                    "sub_limit": sub_limit,
+                    "sub_remaining": sub_limit,
+                    "cancel_at_period_end": False,
+                    "rc_customer_id": rc_app_user_id,
+                }
+                if sub_period_start:
+                    updates["sub_period_start"] = sub_period_start
+                if sub_period_end:
+                    updates["sub_period_end"] = sub_period_end
+
+                update_user_credits(user_id, updates)
+                print(f"✅ {event_type}: user {user_id} → {tier} ({sub_limit} credits)")
+            else:
+                print(f"⚠️ Unknown product_id: {product_id}")
+
+        elif event_type == "PRODUCT_CHANGE":
+            product_info = RC_PRODUCT_MAP.get(product_id)
+            if product_info:
+                tier = product_info["tier"]
+                sub_limit = product_info["sub_limit"]
+
+                updates = {
+                    "tier": tier,
+                    "is_active": True,
+                    "sub_limit": sub_limit,
+                    "sub_remaining": sub_limit,
+                    "cancel_at_period_end": False,
+                }
+                if sub_period_start:
+                    updates["sub_period_start"] = sub_period_start
+                if sub_period_end:
+                    updates["sub_period_end"] = sub_period_end
+
+                update_user_credits(user_id, updates)
+                print(f"✅ PRODUCT_CHANGE: user {user_id} → {tier} ({sub_limit} credits)")
+            else:
+                print(f"⚠️ Unknown product_id for change: {product_id}")
+
+        elif event_type == "CANCELLATION":
+            update_user_credits(user_id, {
+                "cancel_at_period_end": True,
+            })
+            print(f"⚠️ CANCELLATION: user {user_id} will not renew")
+
+        elif event_type == "UNCANCELLATION":
+            update_user_credits(user_id, {
+                "cancel_at_period_end": False,
+            })
+            print(f"✅ UNCANCELLATION: user {user_id} re-enabled auto-renew")
+
+        elif event_type == "EXPIRATION":
+            update_user_credits(user_id, {
+                "tier": "free",
+                "is_active": False,
+                "sub_remaining": 0,
+                "sub_limit": 0,
+                "sub_period_start": None,
+                "sub_period_end": None,
+                "cancel_at_period_end": False,
+            })
+            print(f"⚠️ EXPIRATION: user {user_id} → free tier (topup + free credits preserved)")
+
+        elif event_type == "NON_RENEWING_PURCHASE":
+            topup_amount = RC_TOPUP_MAP.get(product_id, 0)
+            if topup_amount > 0:
+                result = add_topup(user_id, topup_amount)
+                if result.get("success"):
+                    print(f"✅ TOP-UP: user {user_id} +{topup_amount} credits (now {result.get('topup_remaining')})")
+                else:
+                    print(f"⚠️ Top-up RPC failed for user {user_id}: {result.get('error')}")
+            else:
+                print(f"⚠️ Unknown top-up product_id: {product_id}")
+
+        elif event_type == "BILLING_ISSUE":
+            print(f"ℹ️ BILLING_ISSUE: user {user_id} — payment retry in progress (no action)")
+
+        elif event_type == "SUBSCRIPTION_PAUSED":
+            print(f"ℹ️ SUBSCRIPTION_PAUSED: user {user_id} (logged, no action)")
+
+        else:
+            print(f"ℹ️ Unhandled event type: {event_type} (logged, returning 200)")
+
+    except Exception as e:
+        print(f"❌ Webhook processing error for {event_type}: {str(e)}")
+        return jsonify({"status": "error_logged"}), 200
+
+    return jsonify({"status": "ok"}), 200
 
 
 @app.route("/health", methods=["GET"])
