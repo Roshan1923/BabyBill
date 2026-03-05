@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  runOnJS,
 } from "react-native-reanimated";
 import {
   Gesture,
@@ -17,7 +18,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 5;
 const DOUBLE_TAP_ZOOM = 2.5;
-const TIMING = { duration: 300 };
+const TIMING = { duration: 250 };
 
 /**
  * ZoomableImage — pinch-to-zoom, pan, and double-tap zoom.
@@ -33,15 +34,28 @@ export default function ZoomableImage({ uri, style }) {
   const translateY = useSharedValue(0);
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
-  const originX = useSharedValue(0);
-  const originY = useSharedValue(0);
+  const pinchOriginX = useSharedValue(0);
+  const pinchOriginY = useSharedValue(0);
+
+  // Helper to clamp translation based on current scale
+  const clampTranslation = (tx, ty, s) => {
+    "worklet";
+    const maxX = ((s - 1) * SCREEN_WIDTH) / 2;
+    const maxY = ((s - 1) * SCREEN_HEIGHT) / 2;
+    return {
+      x: Math.min(Math.max(tx, -maxX), maxX),
+      y: Math.min(Math.max(ty, -maxY), maxY),
+    };
+  };
 
   // ─── Double Tap ────────────────────────────────────────────
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
+    .maxDuration(300)
     .onEnd((event) => {
+      "worklet";
       if (savedScale.value > 1.1) {
-        // Zoom out
+        // Zoom out to 1x
         scale.value = withTiming(1, TIMING);
         translateX.value = withTiming(0, TIMING);
         translateY.value = withTiming(0, TIMING);
@@ -53,45 +67,47 @@ export default function ZoomableImage({ uri, style }) {
         const targetScale = DOUBLE_TAP_ZOOM;
         const focusX = event.x - SCREEN_WIDTH / 2;
         const focusY = event.y - SCREEN_HEIGHT / 2;
-        let targetX = -focusX * (targetScale - 1);
-        let targetY = -focusY * (targetScale - 1);
-
-        // Clamp
-        const maxX = ((targetScale - 1) * SCREEN_WIDTH) / 2;
-        const maxY = ((targetScale - 1) * SCREEN_HEIGHT) / 2;
-        targetX = Math.min(Math.max(targetX, -maxX), maxX);
-        targetY = Math.min(Math.max(targetY, -maxY), maxY);
+        const clamped = clampTranslation(
+          -focusX * (targetScale - 1),
+          -focusY * (targetScale - 1),
+          targetScale
+        );
 
         scale.value = withTiming(targetScale, TIMING);
-        translateX.value = withTiming(targetX, TIMING);
-        translateY.value = withTiming(targetY, TIMING);
+        translateX.value = withTiming(clamped.x, TIMING);
+        translateY.value = withTiming(clamped.y, TIMING);
         savedScale.value = targetScale;
-        savedTranslateX.value = targetX;
-        savedTranslateY.value = targetY;
+        savedTranslateX.value = clamped.x;
+        savedTranslateY.value = clamped.y;
       }
     });
 
   // ─── Pinch ─────────────────────────────────────────────────
   const pinch = Gesture.Pinch()
     .onStart((event) => {
-      originX.value = event.focalX - SCREEN_WIDTH / 2;
-      originY.value = event.focalY - SCREEN_HEIGHT / 2;
+      "worklet";
+      pinchOriginX.value = event.focalX - SCREEN_WIDTH / 2;
+      pinchOriginY.value = event.focalY - SCREEN_HEIGHT / 2;
     })
     .onUpdate((event) => {
+      "worklet";
+      // Direct assignment — no animation during gesture for instant response
       const newScale = Math.min(
         Math.max(savedScale.value * event.scale, ZOOM_MIN * 0.5),
         ZOOM_MAX
       );
       scale.value = newScale;
 
-      const dx = originX.value * (1 - event.scale);
-      const dy = originY.value * (1 - event.scale);
+      // Translate so zoom centers on focal point
+      const dx = pinchOriginX.value * (1 - event.scale);
+      const dy = pinchOriginY.value * (1 - event.scale);
       translateX.value = savedTranslateX.value + dx;
       translateY.value = savedTranslateY.value + dy;
     })
     .onEnd(() => {
-      if (scale.value < 1) {
-        // Snap back
+      "worklet";
+      if (scale.value < ZOOM_MIN) {
+        // Bounce back to 1x
         scale.value = withTiming(1, TIMING);
         translateX.value = withTiming(0, TIMING);
         translateY.value = withTiming(0, TIMING);
@@ -103,16 +119,16 @@ export default function ZoomableImage({ uri, style }) {
 
       savedScale.value = scale.value;
 
-      // Clamp translation
-      const maxX = ((scale.value - 1) * SCREEN_WIDTH) / 2;
-      const maxY = ((scale.value - 1) * SCREEN_HEIGHT) / 2;
-      const clampedX = Math.min(Math.max(translateX.value, -maxX), maxX);
-      const clampedY = Math.min(Math.max(translateY.value, -maxY), maxY);
-
-      translateX.value = withTiming(clampedX, TIMING);
-      translateY.value = withTiming(clampedY, TIMING);
-      savedTranslateX.value = clampedX;
-      savedTranslateY.value = clampedY;
+      // Clamp and animate to bounds
+      const clamped = clampTranslation(
+        translateX.value,
+        translateY.value,
+        scale.value
+      );
+      translateX.value = withTiming(clamped.x, TIMING);
+      translateY.value = withTiming(clamped.y, TIMING);
+      savedTranslateX.value = clamped.x;
+      savedTranslateY.value = clamped.y;
     });
 
   // ─── Pan ───────────────────────────────────────────────────
@@ -120,11 +136,14 @@ export default function ZoomableImage({ uri, style }) {
     .minPointers(1)
     .maxPointers(2)
     .onUpdate((event) => {
+      "worklet";
       if (scale.value <= 1) return;
+      // Direct assignment — instant response, no animation lag
       translateX.value = savedTranslateX.value + event.translationX;
       translateY.value = savedTranslateY.value + event.translationY;
     })
     .onEnd((event) => {
+      "worklet";
       if (scale.value <= 1) {
         translateX.value = withTiming(0, TIMING);
         translateY.value = withTiming(0, TIMING);
@@ -136,20 +155,19 @@ export default function ZoomableImage({ uri, style }) {
       const finalX = savedTranslateX.value + event.translationX;
       const finalY = savedTranslateY.value + event.translationY;
 
-      const maxX = ((scale.value - 1) * SCREEN_WIDTH) / 2;
-      const maxY = ((scale.value - 1) * SCREEN_HEIGHT) / 2;
-      const clampedX = Math.min(Math.max(finalX, -maxX), maxX);
-      const clampedY = Math.min(Math.max(finalY, -maxY), maxY);
-
-      translateX.value = withTiming(clampedX, TIMING);
-      translateY.value = withTiming(clampedY, TIMING);
-      savedTranslateX.value = clampedX;
-      savedTranslateY.value = clampedY;
+      // Clamp with animation for smooth snap to bounds
+      const clamped = clampTranslation(finalX, finalY, scale.value);
+      translateX.value = withTiming(clamped.x, TIMING);
+      translateY.value = withTiming(clamped.y, TIMING);
+      savedTranslateX.value = clamped.x;
+      savedTranslateY.value = clamped.y;
     });
 
   // ─── Compose gestures ──────────────────────────────────────
-  const composed = Gesture.Simultaneous(pinch, pan);
-  const gesture = Gesture.Exclusive(doubleTap, composed);
+  // Pinch and Pan run simultaneously (both fire during two-finger gestures)
+  // Double-tap is separate — Race ensures single-tap doesn't block pinch
+  const pinchPan = Gesture.Simultaneous(pinch, pan);
+  const gesture = Gesture.Race(doubleTap, pinchPan);
 
   // ─── Animated style ────────────────────────────────────────
   const animatedStyle = useAnimatedStyle(() => ({
