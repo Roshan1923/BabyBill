@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import Icon from 'react-native-vector-icons/Feather';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { appleAuth } from '@invertase/react-native-apple-authentication';
+import QuickCrypto from 'react-native-quick-crypto';
 import {
   View,
   Text,
@@ -24,6 +26,7 @@ const BillBrainLogo = require('../assets/billbrain.png');
 
 GoogleSignin.configure({
   webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
+  iosClientId: '841045886628-8fpnck0rnopufc8pq62oidfiju85gfdd.apps.googleusercontent.com',
 });
 
 // ─── Design System ───────────────────────────────────────────
@@ -44,19 +47,13 @@ const DS = {
   shadow:        "rgba(26,58,107,0.10)",
 };
 
-if (Platform.OS !== 'ios') {
-  GoogleSignin.configure({
-    webClientId: '841045886628-95d4qh7u3vfbi9cg7ssosublgmtoich1.apps.googleusercontent.com',
-    iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-  });
-}
-
 const LoginScreen = ({ navigation }) => {
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
 
   // Animations
   const loginScale = useRef(new Animated.Value(1)).current;
@@ -155,7 +152,64 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleAppleSignIn = async () => {
-    showModal('information-circle', DS.brandBlue, 'Coming Soon', 'Apple Sign-In will be available in a future update.');
+    try {
+      setAppleLoading(true);
+  
+      // Generate a raw nonce — apple-auth lib hashes it internally
+      const rawNonce = Math.random().toString(36).substring(2, 15) +
+        Math.random().toString(36).substring(2, 15);
+  
+      const appleAuthResponse = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+        nonce: rawNonce,
+      });
+  
+      const credentialState = await appleAuth.getCredentialStateForUser(appleAuthResponse.user);
+      if (credentialState !== appleAuth.State.AUTHORIZED) {
+        showModal('alert-circle', DS.negative, 'Error', 'Apple authorization failed.');
+        setAppleLoading(false);
+        return;
+      }
+  
+      const { identityToken, fullName } = appleAuthResponse;
+      if (!identityToken) {
+        showModal('alert-circle', DS.negative, 'Error', 'Failed to get Apple ID token.');
+        setAppleLoading(false);
+        return;
+      }
+  
+      // Pass the SAME raw nonce to Supabase — it hashes and compares internally
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: identityToken,
+        nonce: rawNonce,
+      });
+  
+      if (error) {
+        showModal('alert-circle', DS.negative, 'Apple Sign-In Failed', error.message);
+        return;
+      }
+  
+      // Apple only gives full name on FIRST sign-in — save it to profile
+      if (fullName?.givenName || fullName?.familyName) {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: [fullName.givenName, fullName.familyName].filter(Boolean).join(' '),
+            given_name: fullName.givenName,
+            family_name: fullName.familyName,
+          },
+        });
+      }
+    } catch (error) {
+      if (error.code === appleAuth.Error.CANCELED) {
+        // User cancelled
+      } else {
+        showModal('alert-circle', DS.negative, 'Error', error.message || 'Apple Sign-In failed.');
+      }
+    } finally {
+      setAppleLoading(false);
+    }
   };
 
   const handleForgotPassword = async () => {
@@ -303,11 +357,18 @@ const LoginScreen = ({ navigation }) => {
                 onPressIn={() => animPress(appleScale)}
                 onPressOut={() => animRelease(appleScale)}
                 onPress={handleAppleSignIn}
+                disabled={appleLoading}
                 style={{ flex: 1 }}
               >
                 <Animated.View style={[styles.socialBtn, { transform: [{ scale: appleScale }] }]}>
-                  <Ionicons name="logo-apple" size={18} color={DS.textPrimary} />
-                  <Text style={styles.socialBtnText}>Apple</Text>
+                  {appleLoading ? (
+                    <ActivityIndicator size="small" color={DS.textPrimary} />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-apple" size={18} color={DS.textPrimary} />
+                      <Text style={styles.socialBtnText}>Apple</Text>
+                    </>
+                  )}
                 </Animated.View>
               </TouchableOpacity>
             </View>
