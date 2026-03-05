@@ -82,17 +82,14 @@ def normalize_rpc_uuid(result):
     Handles scalar, list, or dict responses."""
     if not result:
         return None
-    # Scalar uuid as string
     if isinstance(result, str):
         return result
-    # List of rows
     if isinstance(result, list) and len(result) > 0:
         row = result[0]
         if isinstance(row, str):
             return row
         if isinstance(row, dict):
             return row.get("id") or row.get("payment_method_id")
-    # Single row dict
     if isinstance(result, dict):
         return result.get("id") or result.get("payment_method_id")
     return None
@@ -108,13 +105,134 @@ azure_client = DocumentAnalysisClient(
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # HTTP timeout for all Supabase calls (seconds)
 HTTP_TIMEOUT = 15.0
 
 # Fallback categories if fetching user categories fails
 DEFAULT_CATEGORIES = ["Food", "Bills", "Gas", "Shopping", "Medical", "Other"]
+
+# ── Supabase header helpers ──
+
+def service_headers():
+    """Headers for server-side DB/storage/RPC calls (full access, bypasses RLS)."""
+    return {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def auth_verify_headers(user_token):
+    """Headers for verifying a user's JWT via Supabase Auth API."""
+    return {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {user_token}",
+    }
+
+
+#-----------------------------------------------------------------------------------------------
+# ── Auth: Verify Supabase JWT ──
+
+def verify_supabase_token(req):
+    """Verify the Supabase JWT by calling Supabase's auth API.
+    Returns (user_id, None) on success, or (None, error_message) on failure."""
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None, "Missing or invalid Authorization header"
+
+    token = auth_header.split("Bearer ")[1]
+
+    try:
+        response = httpx.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers=auth_verify_headers(token),
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            user_data = response.json()
+            user_id = user_data.get("id")
+            if user_id:
+                return user_id, None
+            return None, "No user ID in token response"
+        else:
+            print(f"⚠️ Token verification failed: {response.status_code} - {response.text}")
+            return None, "Invalid or expired token"
+
+    except Exception as e:
+        print(f"⚠️ Token verification error: {str(e)}")
+        return None, "Token verification failed"
+
+
+#-----------------------------------------------------------------------------------------------
+# ── Credits: Consume / Refund / Balance ──
+
+def consume_credit(user_id):
+    """Call the consume_credit RPC. Returns the result dict."""
+    try:
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/consume_credit",
+            headers=service_headers(),
+            json={"p_user_id": user_id},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"⚠️ consume_credit RPC error: {response.status_code} - {response.text}")
+            return {"success": False, "error": "CREDIT_CHECK_FAILED"}
+
+    except Exception as e:
+        print(f"⚠️ consume_credit error: {str(e)}")
+        return {"success": False, "error": "CREDIT_CHECK_FAILED"}
+
+
+def refund_credit(user_id):
+    """Call the refund_credit RPC. Used only for system errors."""
+    try:
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/refund_credit",
+            headers=service_headers(),
+            json={"p_user_id": user_id},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            print(f"🔄 Credit refunded for user {user_id}")
+            return result
+        else:
+            print(f"⚠️ refund_credit RPC error: {response.status_code} - {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"⚠️ refund_credit error: {str(e)}")
+        return None
+
+
+def get_credit_balance(user_id):
+    """Call the get_credit_balance RPC. Resets period if expired, does not consume."""
+    try:
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/get_credit_balance",
+            headers=service_headers(),
+            json={"p_user_id": user_id},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"⚠️ get_credit_balance RPC error: {response.status_code} - {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"⚠️ get_credit_balance error: {str(e)}")
+        return None
 
 
 #-----------------------------------------------------------------------------------------------
@@ -125,11 +243,7 @@ def fetch_user_categories(user_id):
     try:
         response = httpx.get(
             f"{SUPABASE_URL}/rest/v1/user_categories",
-            headers={
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers=service_headers(),
             params={
                 "user_id": f"eq.{user_id}",
                 "select": "name",
@@ -337,11 +451,7 @@ def check_duplicate(user_id, store_name, date, total_amount):
 
     response = httpx.get(
         f"{SUPABASE_URL}/rest/v1/receipts",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-        },
+        headers=service_headers(),
         params=params,
         timeout=HTTP_TIMEOUT,
     )
@@ -356,20 +466,14 @@ def check_duplicate(user_id, store_name, date, total_amount):
 # ── Payment method matching ──
 
 def auto_match_payment_method(user_id, last_four):
-    """Find a matching saved payment method for this user by last four digits.
-    Uses the find_payment_method SQL function created in Supabase.
-    Returns the payment_method UUID string or None."""
+    """Find a matching saved payment method for this user by last four digits."""
     if not last_four:
         return None
 
     try:
         response = httpx.post(
             f"{SUPABASE_URL}/rest/v1/rpc/find_payment_method",
-            headers={
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers=service_headers(),
             json={
                 "p_user_id": user_id,
                 "p_last_four": last_four,
@@ -386,8 +490,7 @@ def auto_match_payment_method(user_id, last_four):
 
 
 def save_receipt_payments(receipt_id, user_id, payment_details):
-    """Save payment details to the receipt_payments table.
-    Batch inserts all payment legs in one request."""
+    """Save payment details to the receipt_payments table."""
     methods = payment_details.get("methods", [])
 
     if not methods:
@@ -396,10 +499,7 @@ def save_receipt_payments(receipt_id, user_id, payment_details):
 
     rows = []
     for method in methods:
-        # Validate and clean last four
         last_four = clean_last_four(method.get("raw_last_four"))
-
-        # Try to auto-match to a saved payment method
         matched_id = auto_match_payment_method(user_id, last_four)
 
         if matched_id:
@@ -418,15 +518,9 @@ def save_receipt_payments(receipt_id, user_id, payment_details):
             "is_contactless": bool(method.get("is_contactless", False)),
         })
 
-    # Batch insert all payment legs in one request
     response = httpx.post(
         f"{SUPABASE_URL}/rest/v1/receipt_payments",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        },
+        headers={**service_headers(), "Prefer": "return=minimal"},
         json=rows,
         timeout=HTTP_TIMEOUT,
     )
@@ -452,30 +546,23 @@ def save_to_supabase(receipt_data, image_url, user_id, image_hash=None):
         "tax": to_money(receipt_data.get("tax")),
         "discount": to_money(receipt_data.get("discount")),
         "total_amount": to_money(receipt_data.get("total_amount")),
-        "payment_method": receipt_data.get("payment_method", "Unknown"),  # legacy field kept
+        "payment_method": receipt_data.get("payment_method", "Unknown"),
         "category": receipt_data.get("category", "Other"),
         "items": receipt_data.get("items", []),
         "raw_text": receipt_data.get("raw_text", ""),
         "image_url": image_url,
         "status": "completed",
-        # New fields
         "document_type": receipt_data.get("document_type", "receipt"),
         "direction": receipt_data.get("direction", "outgoing"),
         "payment_status": receipt_data.get("payment_status", "paid"),
     }
 
-    # Include image_hash if provided
     if image_hash:
         row["image_hash"] = image_hash
 
     response = httpx.post(
         f"{SUPABASE_URL}/rest/v1/receipts",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        },
+        headers={**service_headers(), "Prefer": "return=representation"},
         json=row,
         timeout=HTTP_TIMEOUT,
     )
@@ -485,7 +572,6 @@ def save_to_supabase(receipt_data, image_url, user_id, image_hash=None):
         receipt_record = saved_receipt[0] if isinstance(saved_receipt, list) else saved_receipt
         receipt_id = receipt_record["id"]
 
-        # Save payment details to receipt_payments table
         payment_details = receipt_data.get("payment_details", {"methods": [], "payment_total": "0.00"})
         save_receipt_payments(receipt_id, user_id, payment_details)
 
@@ -500,12 +586,12 @@ def upload_image_to_supabase(image_bytes, filename):
     response = httpx.post(
         f"{SUPABASE_URL}/storage/v1/object/receipt-images/{filename}",
         headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "apikey": SUPABASE_SERVICE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
             "Content-Type": "image/jpeg",
         },
         content=image_bytes,
-        timeout=20.0,  # image uploads can be slower
+        timeout=20.0,
     )
 
     if response.status_code in [200, 201]:
@@ -521,22 +607,24 @@ def upload_image_to_supabase(image_bytes, filename):
 @app.route("/process-receipt", methods=["POST"])
 def process_receipt():
     """Main endpoint: receives image, runs OCR + GPT, saves to Supabase."""
+    credit_consumed = False
+    user_id = None
+
     try:
         if "image" not in request.files:
             return jsonify({"error": "No image provided"}), 400
 
-        user_id = request.form.get("user_id")
+        # ── Step 0: Verify JWT and get user_id ──
+        user_id, auth_error = verify_supabase_token(request)
         if not user_id:
-            return jsonify({"error": "No user_id provided"}), 400
+            return jsonify({"error": auth_error or "Authentication required"}), 401
 
         force_save = request.form.get("force_save", "false") == "true"
-
-        # Get image hash from frontend (for storage)
         image_hash = request.form.get("image_hash")
 
         image_file = request.files["image"]
         image_bytes = image_file.read()
-        image_bytes = compress_image(image_bytes)  # Compress for Azure 4MB limit
+        image_bytes = compress_image(image_bytes)
         filename = f"receipt_{int(__import__('time').time())}.jpg"
 
         print(f"📸 Received image: {len(image_bytes)} bytes")
@@ -544,22 +632,43 @@ def process_receipt():
         if image_hash:
             print(f"🔑 Image hash: {image_hash}")
 
-        # Step 1: Upload image to Supabase Storage
+        # ── Step 1: Consume 1 credit (before any processing) ──
+        print("💳 Checking credits...")
+        credit_result = consume_credit(user_id)
+
+        if not credit_result.get("success"):
+            error_code = credit_result.get("error", "CREDIT_CHECK_FAILED")
+            print(f"🚫 Credit check failed: {error_code}")
+            return jsonify({
+                "error": error_code,
+                "credits_used": credit_result.get("credits_used"),
+                "credits_limit": credit_result.get("credits_limit"),
+                "remaining": credit_result.get("remaining", 0),
+                "period_end": credit_result.get("period_end"),
+                "tier": credit_result.get("tier"),
+            }), 403
+
+        credit_consumed = True
+        is_unlimited = credit_result.get("unlimited", False)
+        print(f"✅ Credit consumed — used: {credit_result.get('credits_used')}/{credit_result.get('credits_limit')}"
+              + (" (unlimited)" if is_unlimited else f" remaining: {credit_result.get('remaining')}"))
+
+        # ── Step 2: Upload image to Supabase Storage ──
         print("☁️ Uploading image to Supabase...")
         image_path = upload_image_to_supabase(image_bytes, filename)
         if not image_path:
-            return jsonify({"error": "Failed to upload image"}), 500
+            raise SystemError("Failed to upload image to storage")
 
-        # Step 2: Fetch user's categories for GPT prompt
+        # ── Step 3: Fetch user's categories for GPT prompt ──
         print("📂 Fetching user categories...")
         user_categories = fetch_user_categories(user_id)
 
-        # Step 3: Run Azure OCR
+        # ── Step 4: Run Azure OCR ──
         print("🔍 Running Azure OCR...")
         raw_text = ocr_receipt(image_bytes)
         print(f"📝 OCR extracted {len(raw_text)} characters")
 
-        # Step 4: Extract structured data with GPT (using user's categories)
+        # ── Step 5: Extract structured data with GPT ──
         print("🤖 Extracting data with GPT...")
         receipt_data = extract_with_gpt(raw_text, user_categories)
         receipt_data["raw_text"] = raw_text
@@ -578,7 +687,7 @@ def process_receipt():
         else:
             print(f"   💳 Legacy: {receipt_data.get('payment_method', 'Unknown')}")
 
-        # Step 5: Check for duplicates (unless force_save)
+        # ── Step 6: Check for duplicates (unless force_save) ──
         if not force_save:
             is_duplicate = check_duplicate(
                 user_id,
@@ -588,16 +697,22 @@ def process_receipt():
             )
 
             if is_duplicate:
-                print("⚠️ Duplicate receipt detected!")
+                print("⚠️ Duplicate receipt detected! (credit still charged)")
                 return jsonify({
                     "success": False,
                     "duplicate": True,
                     "receipt_data": receipt_data,
                     "image_path": image_path,
                     "message": "Duplicate receipt detected",
+                    "credits": {
+                        "credits_used": credit_result.get("credits_used"),
+                        "credits_limit": credit_result.get("credits_limit"),
+                        "remaining": credit_result.get("remaining"),
+                        "unlimited": is_unlimited,
+                    },
                 }), 200
 
-        # Step 6: Save to Supabase Database (receipts + receipt_payments)
+        # ── Step 7: Save to Supabase Database ──
         print("💾 Saving to Supabase...")
         saved = save_to_supabase(receipt_data, image_path, user_id, image_hash)
 
@@ -606,29 +721,48 @@ def process_receipt():
             return jsonify({
                 "success": True,
                 "receipt": saved[0] if isinstance(saved, list) else saved,
+                "credits": {
+                    "credits_used": credit_result.get("credits_used"),
+                    "credits_limit": credit_result.get("credits_limit"),
+                    "remaining": credit_result.get("remaining"),
+                    "unlimited": is_unlimited,
+                },
             }), 200
         else:
-            return jsonify({"error": "Failed to save to database"}), 500
+            raise SystemError("Failed to save receipt to database")
+
+    except SystemError as e:
+        print(f"❌ System error (refunding credit): {str(e)}")
+        if credit_consumed and user_id:
+            refund_credit(user_id)
+        return jsonify({"error": str(e)}), 500
 
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"❌ Unexpected error: {str(e)}")
+        if credit_consumed and user_id:
+            refund_credit(user_id)
+            print(f"🔄 Credit refunded due to unexpected error")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/force-save-receipt", methods=["POST"])
 def force_save_receipt():
-    """Save a receipt that was flagged as duplicate (user chose Save Anyway)."""
+    """Save a receipt that was flagged as duplicate (user chose Save Anyway).
+    Does NOT consume a credit — the original /process-receipt already charged one."""
     try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
 
-        user_id = data.get("user_id")
         receipt_data = data.get("receipt_data")
         image_path = data.get("image_path")
         image_hash = data.get("image_hash")
 
-        if not user_id or not receipt_data:
+        if not receipt_data:
             return jsonify({"error": "Missing required fields"}), 400
 
         print(f"💾 Force saving duplicate receipt for user: {user_id}")
@@ -646,6 +780,21 @@ def force_save_receipt():
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/credits/balance", methods=["GET"])
+def credits_balance():
+    """Return the current credit balance for the authenticated user.
+    Resets period if expired (via RPC)."""
+    user_id, auth_error = verify_supabase_token(request)
+    if not user_id:
+        return jsonify({"error": auth_error or "Authentication required"}), 401
+
+    balance = get_credit_balance(user_id)
+    if balance and balance.get("success"):
+        return jsonify(balance), 200
+    else:
+        return jsonify({"error": "Could not fetch credit balance"}), 500
 
 
 @app.route("/health", methods=["GET"])
