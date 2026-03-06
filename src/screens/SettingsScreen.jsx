@@ -57,297 +57,6 @@ const rowStyles = StyleSheet.create({
   sublabel: { fontSize: 12, fontWeight: "400", marginTop: 2, color: DS.textSecondary },
 });
 
-// ─── Subscription Card ───────────────────────────────────────
-
-function SubscriptionCard({ navigation }) {
-  const { credits, totalRemaining, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
-  const scale = useRef(new Animated.Value(1)).current;
-
-  // Refresh credits when settings screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      fetchCredits();
-    }, [fetchCredits])
-  );
-
-  const isPremium = tierName === 'Premium';
-  const isEssential = tierName === 'Essential';
-  const isFree = !isSubscribed;
-
-  const accentColor = isPremium ? DS.accentGold : isEssential ? DS.brandNavy : DS.textSecondary;
-  const pillBg = isPremium ? DS.accentGoldSub : isEssential ? '#E8EFF8' : DS.bgSurface2;
-  const pillColor = isPremium ? DS.accentGold : isEssential ? DS.brandNavy : DS.textSecondary;
-
-  // Credits display
-  const remaining = activeRemaining.remaining;
-  const limit = activeRemaining.limit;
-  const barPercent = limit > 0 ? Math.min((remaining / limit) * 100, 100) : 0;
-  const topupCredits = credits?.topup_remaining || 0;
-
-  // Bar color based on remaining
-  const barColor = remaining === 0 ? DS.negative
-    : (limit > 0 && remaining / limit <= 0.2) ? DS.accentGold
-    : accentColor;
-
-  const handleManageSubscription = () => {
-    // Opens Apple's subscription management page
-    Linking.openURL('https://apps.apple.com/account/subscriptions');
-  };
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
-      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 40, bounciness: 6 }).start()}
-      onPress={() => navigation.navigate('Paywall')}
-    >
-      <Animated.View style={[subStyles.card, { transform: [{ scale }] }]}>
-        {/* Top accent line */}
-        <View style={[subStyles.accentLine, { backgroundColor: accentColor }]} />
-
-        <View style={subStyles.cardInner}>
-          {/* Plan row */}
-          <View style={subStyles.planRow}>
-            <View style={subStyles.planLeft}>
-              <View style={[subStyles.planIcon, { backgroundColor: accentColor + '12' }]}>
-                <Ionicons
-                  name={isFree ? 'flash-outline' : 'diamond'}
-                  size={18}
-                  color={accentColor}
-                />
-              </View>
-              <View>
-                <Text style={subStyles.planLabel}>Current Plan</Text>
-                <View style={subStyles.planNameRow}>
-                  <Text style={[subStyles.planName, { color: accentColor }]}>{tierName}</Text>
-                  <View style={[subStyles.planPill, { backgroundColor: pillBg }]}>
-                    <Text style={[subStyles.planPillText, { color: pillColor }]}>
-                      {isFree ? 'FREE' : isEssential ? 'ACTIVE' : 'ACTIVE'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-            <Icon name="chevron-right" size={18} color={DS.textSecondary} />
-          </View>
-
-          {/* Divider */}
-          <View style={subStyles.divider} />
-
-          {/* Credits section */}
-          <View style={subStyles.creditsSection}>
-            <View style={subStyles.creditsHeaderRow}>
-              <Text style={subStyles.creditsLabel}>Scan Credits</Text>
-              <Text style={subStyles.creditsCount}>
-                <Text style={[subStyles.creditsNumber, { color: barColor }]}>{remaining}</Text>
-                <Text style={subStyles.creditsOf}> / {limit}</Text>
-              </Text>
-            </View>
-
-            {/* Progress bar */}
-            <View style={subStyles.barTrack}>
-              <View style={[subStyles.barFill, { width: `${barPercent}%`, backgroundColor: barColor }]} />
-            </View>
-
-            {/* Bottom info row */}
-            <View style={subStyles.creditsFooter}>
-              {topupCredits > 0 && (
-                <View style={subStyles.topupBadge}>
-                  <Ionicons name="add-circle" size={12} color={DS.brandNavy} />
-                  <Text style={subStyles.topupText}>+{topupCredits} top-up</Text>
-                </View>
-              )}
-              <Text style={subStyles.footerHint}>
-                {isFree ? 'Upgrade for more scans' : 'Renews monthly'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Upgrade / Manage buttons */}
-          {isFree ? (
-            <View style={subStyles.upgradeBtn}>
-              <Ionicons name="flash" size={14} color={DS.textInverse} />
-              <Text style={subStyles.upgradeBtnText}>Upgrade Plan</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={subStyles.manageLink}
-              onPress={handleManageSubscription}
-              activeOpacity={0.7}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="settings-outline" size={13} color={DS.textSecondary} />
-              <Text style={subStyles.manageLinkText}>Manage Subscription</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
-    </TouchableOpacity>
-  );
-}
-
-const subStyles = StyleSheet.create({
-  card: {
-    borderRadius: SIZING.cardRadius,
-    borderWidth: 1,
-    borderColor: DS.border,
-    backgroundColor: DS.bgSurface,
-    marginBottom: 24,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 },
-      android: { elevation: 3 },
-    }),
-  },
-  accentLine: {
-    height: 3,
-    width: '100%',
-  },
-  cardInner: {
-    padding: SIZING.cardPad,
-  },
-  planRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  planLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  planIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  planLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: DS.textSecondary,
-    marginBottom: 2,
-  },
-  planNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  planName: {
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  planPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  planPillText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: DS.border,
-    marginVertical: 16,
-  },
-  creditsSection: {},
-  creditsHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  creditsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DS.textSecondary,
-  },
-  creditsCount: {
-    fontSize: 13,
-  },
-  creditsNumber: {
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  creditsOf: {
-    fontWeight: '400',
-    color: DS.textMuted,
-    fontSize: 13,
-  },
-  barTrack: {
-    height: 6,
-    backgroundColor: DS.bgSurface2,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  creditsFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  topupBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#E8EFF8',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  topupText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: DS.brandNavy,
-  },
-  footerHint: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: DS.textMuted,
-  },
-  upgradeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: DS.accentGold,
-    ...Platform.select({
-      ios: { shadowColor: DS.accentGold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-      android: { elevation: 3 },
-    }),
-  },
-  upgradeBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: DS.textInverse,
-  },
-  manageLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-  },
-  manageLinkText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: DS.textSecondary,
-    textDecorationLine: 'underline',
-    textDecorationStyle: 'dotted',
-  },
-});
-
 // ─── Bottom Nav ──────────────────────────────────────────────
 
 function BottomNav({ activeTab, onTabPress }) {
@@ -423,8 +132,11 @@ export default function SettingsScreen({ navigation }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const { credits, totalRemaining, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
+
   useFocusEffect(
     useCallback(() => {
+      fetchCredits();
       (async () => {
         try {
           setLoading(true);
@@ -473,6 +185,19 @@ export default function SettingsScreen({ navigation }) {
   const currencyDisplay = profile?.currency || "CAD";
   const countryDisplay = profile?.country || "Canada";
 
+  // Credit bar calculations
+  const remaining = activeRemaining.remaining;
+  const limit = activeRemaining.limit;
+  const barPercent = limit > 0 ? Math.min((remaining / limit) * 100, 100) : 0;
+  const topupCredits = credits?.topup_remaining || 0;
+  const isPremium = tierName === 'Premium';
+  const isEssential = tierName === 'Essential';
+  const isFree = !isSubscribed;
+  const accentColor = isPremium ? DS.accentGold : isEssential ? DS.brandNavy : DS.textSecondary;
+  const barColor = remaining === 0 ? DS.negative
+    : (limit > 0 && remaining / limit <= 0.2) ? DS.accentGold
+    : DS.positive;
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
@@ -486,11 +211,14 @@ export default function SettingsScreen({ navigation }) {
           </View>
         ) : (
           <>
-            {/* Profile Card */}
-            <TouchableOpacity activeOpacity={0.8}
-              onPress={() => navigation.navigate("ProfileEdit", { user, profile })}
-              style={styles.profileCard}>
-              <View style={styles.profileRow}>
+            {/* ── Profile + Plan Card (unified) ── */}
+            <View style={styles.profileCard}>
+              {/* Profile row — tappable */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate("ProfileEdit", { user, profile })}
+                style={styles.profileRow}
+              >
                 {avatarUrl ? (
                   <Image source={{ uri: avatarUrl }} style={styles.profileAvatarImage} />
                 ) : (
@@ -503,12 +231,65 @@ export default function SettingsScreen({ navigation }) {
                   <Text style={styles.profileEmail}>{email}</Text>
                 </View>
                 <Icon name="chevron-right" size={20} color={DS.textSecondary} />
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
 
-            {/* Subscription Card */}
-            <Text style={styles.sectionLabel}>SUBSCRIPTION</Text>
-            <SubscriptionCard navigation={navigation} />
+              {/* Thin divider */}
+              <View style={styles.profileDivider} />
+
+              {/* Plan + Credits row — tappable → Paywall */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('Paywall')}
+                style={styles.planSection}
+              >
+                {/* Plan name + badge */}
+                <View style={styles.planTopRow}>
+                  <View style={styles.planNameWrap}>
+                    <Ionicons
+                      name={isFree ? 'flash-outline' : 'diamond'}
+                      size={14}
+                      color={accentColor}
+                    />
+                    <Text style={[styles.planName, { color: accentColor }]}>{tierName}</Text>
+                    <View style={[styles.planPill, { backgroundColor: isFree ? DS.bgSurface2 : accentColor + '12' }]}>
+                      <Text style={[styles.planPillText, { color: isFree ? DS.textMuted : accentColor }]}>
+                        {isFree ? 'FREE' : 'ACTIVE'}
+                      </Text>
+                    </View>
+                  </View>
+                  {isFree ? (
+                    <View style={styles.upgradeChip}>
+                      <Text style={styles.upgradeChipText}>Upgrade</Text>
+                      <Ionicons name="chevron-forward" size={11} color={DS.accentGold} />
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')}
+                      activeOpacity={0.6}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.manageText}>Manage</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Credits bar */}
+                <View style={styles.creditsRow}>
+                  <Text style={styles.creditsLabel}>
+                    <Text style={[styles.creditsNum, { color: barColor }]}>{remaining}</Text>
+                    <Text style={styles.creditsOf}> / {limit} credits</Text>
+                  </Text>
+                  {topupCredits > 0 && (
+                    <View style={styles.topupChip}>
+                      <Text style={styles.topupChipText}>+{topupCredits} top-up</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.barTrack}>
+                  <View style={[styles.barFill, { width: `${barPercent}%`, backgroundColor: barColor }]} />
+                </View>
+              </TouchableOpacity>
+            </View>
 
             {/* Preferences */}
             <Text style={styles.sectionLabel}>PREFERENCES</Text>
@@ -579,18 +360,53 @@ const styles = StyleSheet.create({
   mainScrollContent: { paddingHorizontal: SIZING.pagePad, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 12, paddingBottom: SIZING.navHeight + 24 },
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
   pageTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3, marginBottom: 20, color: DS.textPrimary },
+
+  // Profile + Plan unified card
   profileCard: {
-    borderRadius: SIZING.cardRadius, padding: SIZING.cardPad, borderWidth: 1, marginBottom: 24,
+    borderRadius: SIZING.cardRadius, borderWidth: 1, marginBottom: 24,
     backgroundColor: DS.bgSurface, borderColor: DS.border,
     ...Platform.select({ ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 }, android: { elevation: 3 } }),
   },
-  profileRow: { flexDirection: "row", alignItems: "center" },
+  profileRow: { flexDirection: "row", alignItems: "center", padding: SIZING.cardPad },
   profileAvatar: { width: SIZING.avatar, height: SIZING.avatar, borderRadius: SIZING.avatar / 2, backgroundColor: DS.brandNavy, alignItems: "center", justifyContent: "center" },
   profileAvatarText: { fontSize: 28, fontWeight: "700", color: DS.textInverse },
   profileAvatarImage: { width: SIZING.avatar, height: SIZING.avatar, borderRadius: SIZING.avatar / 2 },
   profileInfo: { flex: 1, marginLeft: 16 },
   profileName: { fontSize: 18, fontWeight: "700", color: DS.textPrimary },
   profileEmail: { fontSize: 13, fontWeight: "400", marginTop: 3, color: DS.textSecondary },
+
+  profileDivider: { height: 1, backgroundColor: DS.border, marginHorizontal: SIZING.cardPad },
+
+  // Plan section inside profile card
+  planSection: { padding: SIZING.cardPad, paddingTop: 14, paddingBottom: 16 },
+  planTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  planNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  planName: { fontSize: 15, fontWeight: '700' },
+  planPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  planPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+
+  upgradeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: DS.accentGoldSub, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+  },
+  upgradeChipText: { fontSize: 12, fontWeight: '600', color: DS.accentGold },
+
+  manageText: { fontSize: 12, fontWeight: '500', color: DS.textSecondary, textDecorationLine: 'underline' },
+
+  creditsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  creditsLabel: { fontSize: 12 },
+  creditsNum: { fontWeight: '700', fontSize: 13 },
+  creditsOf: { fontWeight: '400', color: DS.textMuted, fontSize: 12 },
+
+  topupChip: {
+    backgroundColor: '#E8EFF8', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6,
+  },
+  topupChipText: { fontSize: 10, fontWeight: '600', color: DS.brandNavy },
+
+  barTrack: { height: 5, backgroundColor: DS.bgSurface2, borderRadius: 3, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 3 },
+
+  // Sections
   sectionLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8, marginLeft: 4, color: DS.textSecondary },
   sectionCard: {
     borderRadius: SIZING.cardRadius, paddingHorizontal: 16, borderWidth: 1, marginBottom: 24,
