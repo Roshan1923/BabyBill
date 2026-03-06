@@ -639,7 +639,7 @@ const styles = StyleSheet.create({
     }),
   },
   logoImage: {
-    width: 56, height: 56, borderRadius: 18,
+    width: 180, height: 90, borderRadius: 18,
   },
   heroTitle: {
     fontSize: 26, fontWeight: '800',
