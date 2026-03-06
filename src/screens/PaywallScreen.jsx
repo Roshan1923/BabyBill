@@ -638,6 +638,9 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
     }),
   },
+  logoImage: {
+    width: 56, height: 56, borderRadius: 18,
+  },
   heroTitle: {
     fontSize: 26, fontWeight: '800',
     color: DS.textPrimary, letterSpacing: -0.5, marginBottom: 3,
