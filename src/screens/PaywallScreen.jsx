@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Image
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Icon from 'react-native-vector-icons/Feather';
@@ -19,6 +20,7 @@ import Purchases from 'react-native-purchases';
 import { useCredits } from '../context/CreditsContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BillBrainLogo = require('../assets/billbrain.png');
 
 // ─── Design Tokens ───────────────────────────────────────────
 const DS = {
@@ -427,12 +429,13 @@ export default function PaywallScreen({ navigation }) {
 
       {/* ── Logo + Tagline ── */}
       <Animated.View style={[styles.heroSection, { opacity: headerFade }]}>
-        <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
-          <View style={styles.logoGlow} />
-          <View style={styles.logoBox}>
-            <Ionicons name="receipt-outline" size={26} color={DS.textInverse} />
-          </View>
-        </Animated.View>
+      <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
+  <Image
+    source={BillBrainLogo}
+    style={styles.logoImage}
+    resizeMode="contain"
+  />
+</Animated.View>
         <Text style={styles.heroTitle}>Upgrade BillBrain</Text>
         <Text style={styles.heroSubtitle}>
           Organize your finances effortlessly
