@@ -131,7 +131,7 @@ const STATUS_CONFIG = {
 
 // ─── Review Card ─────────────────────────────────────────────
 
-function ReviewCard({ item, onPress, onDelete, onForceSave }) {
+function ReviewCard({ item, onPress, onDelete, onForceSave, onUpgrade }) {
   const scale = useRef(new Animated.Value(1)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState(false);
@@ -261,25 +261,35 @@ function ReviewCard({ item, onPress, onDelete, onForceSave }) {
                 </Text>
               </View>
               <View style={styles.errorBtnRow}>
-                {item.isDuplicate && (
-                  <TouchableOpacity
-                    style={styles.saveAnywayBtn}
-                    onPress={() => onForceSave?.(item)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="save-outline" size={15} color={DS.brandNavy} />
-                    <Text style={styles.saveAnywayText}>Save Anyway</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => onDelete?.(item)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="trash-outline" size={16} color={DS.textInverse} />
-                  <Text style={styles.deleteBtnText}>Delete</Text>
-                </TouchableOpacity>
-              </View>
+    {item.isDuplicate && (
+      <TouchableOpacity
+        style={styles.saveAnywayBtn}
+        onPress={() => onForceSave?.(item)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="save-outline" size={15} color={DS.brandNavy} />
+        <Text style={styles.saveAnywayText}>Save Anyway</Text>
+      </TouchableOpacity>
+    )}
+    {item.isLimitReached && (
+      <TouchableOpacity
+        style={[styles.saveAnywayBtn, { backgroundColor: '#FEF3DC', borderColor: 'rgba(232,160,32,0.25)' }]}
+        onPress={() => onUpgrade?.()}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="flash" size={15} color="#E8A020" />
+        <Text style={[styles.saveAnywayText, { color: '#E8A020' }]}>Upgrade</Text>
+      </TouchableOpacity>
+    )}
+    <TouchableOpacity
+      style={styles.deleteBtn}
+      onPress={() => onDelete?.(item)}
+      activeOpacity={0.8}
+    >
+      <Ionicons name="trash-outline" size={16} color={DS.textInverse} />
+      <Text style={styles.deleteBtnText}>Delete</Text>
+    </TouchableOpacity>
+</View>
             </View>
           )}
         </View>
@@ -355,13 +365,14 @@ function EmptyReview() {
 
 // ─── Main Component ──────────────────────────────────────────
 
-export default function ToReviewReceipts({ items = [], onPressItem, onDelete, onForceSave }) {
+export default function ToReviewReceipts({ items = [], onPressItem, onDelete, onForceSave, onUpgrade }) {
   const renderItem = ({ item, index }) => (
     <ReviewCard
       item={{ ...item, index: index + 1 }}
       onPress={() => onPressItem?.(item)}
       onDelete={() => onDelete?.(item)}
       onForceSave={() => onForceSave?.(item)}
+      onUpgrade={() => onUpgrade?.()}
     />
   );
 

@@ -55,9 +55,10 @@ const App = () => {
       if (session?.user?.id) {
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
         Purchases.configure({
-          apiKey: 'appl_GiQmBRqwOePBykUbDJzEsrsrlEj',
+          apiKey: 'your_revenuecat_key',
           appUserID: session.user.id,
         });
+      
       }
     });
 

@@ -12,6 +12,7 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  Alert
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -23,7 +24,7 @@ import { useScanQueue } from '../context/ScanContext';
 import { useProcessing } from '../context/ProcessingContext';
 import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
-
+const { totalRemaining, canScan } = useCredits();
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── Design System Tokens ────────────────────────────────────
@@ -247,13 +248,44 @@ export default function ScanScreen({ navigation }) {
 
   // ─── Done — show completion sheet & start processing ────────
   const handleDone = () => {
-    const batch = [...scans]; // Snapshot before clearing
+    if (totalRemaining === 0) {
+      Alert.alert(
+        'Out of Scan Credits',
+        "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
+        [
+          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    if (totalRemaining < scans.length) {
+      Alert.alert(
+        'Not Enough Credits',
+        `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but ${scans.length} receipt${scans.length !== 1 ? 's' : ''} to process. Only the first ${totalRemaining} will be processed.`,
+        [
+          {
+            text: `Process ${totalRemaining}`,
+            onPress: () => {
+              const batch = scans.slice(0, totalRemaining);
+              setCommittedScans(batch);
+              setShowCommit(true);
+              processBatch(batch);
+            },
+          },
+          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    const batch = [...scans];
     setCommittedScans(batch);
     setShowCommit(true);
-
-    // Start background processing immediately
     processBatch(batch);
-  };
+};
 
   const handleViewProgress = () => {
     setShowCommit(false);

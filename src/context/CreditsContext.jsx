@@ -1,9 +1,13 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '../config/supabase';
 import { API_URL } from '../config/api';
 
 const CreditsContext = createContext();
 
+useEffect(() => {
+    fetchCredits();
+  }, [fetchCredits]);
+  
 export function CreditsProvider({ children }) {
   const [credits, setCredits] = useState(null);
   const [loading, setLoading] = useState(false);

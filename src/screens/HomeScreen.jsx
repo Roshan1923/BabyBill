@@ -548,7 +548,7 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
 
 // ─── Action Buttons ──────────────────────────────────────────
 
-function ActionButtons({ navigation }) {
+function ActionButtons({ navigation, totalRemaining }) {
   const { processBatch } = useProcessing();
   const uploadScale = useRef(new Animated.Value(1)).current;
   const manualScale = useRef(new Animated.Value(1)).current;
@@ -573,13 +573,49 @@ function ActionButtons({ navigation }) {
       if (response.didCancel || response.errorCode) return;
       const assets = response.assets;
       if (assets && assets.length > 0) {
-        const batch = assets.map((asset, index) => ({
+        if (totalRemaining === 0) {
+          Alert.alert(
+            'Out of Scan Credits',
+            "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
+            [
+              { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+    
+        let selectedAssets = assets;
+        if (totalRemaining < assets.length) {
+          Alert.alert(
+            'Not Enough Credits',
+            `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but selected ${assets.length} photo${assets.length !== 1 ? 's' : ''}. Only the first ${totalRemaining} will be processed.`,
+            [
+              {
+                text: `Process ${totalRemaining}`,
+                onPress: () => {
+                  const batch = assets.slice(0, totalRemaining).map((asset, index) => ({
+                    id: `upload_${Date.now()}_${index}`,
+                    photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
+                  }));
+                  processBatch(batch);
+                  navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
+                },
+              },
+              { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+    
+        const batch = selectedAssets.map((asset, index) => ({
           id: `upload_${Date.now()}_${index}`,
           photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
         }));
         processBatch(batch);
         navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
-      }
+    }
     });
   };
 
@@ -783,7 +819,7 @@ export default function HomeScreen({ navigation }) {
 
             <DotIndicator count={2} activeIndex={activeCardIndex} />
             <LivePendingBar dbPendingCount={pendingCount} navigation={navigation} />
-            <ActionButtons navigation={navigation} />
+            <ActionButtons navigation={navigation} totalRemaining={getTotalCredits(credits).remaining} />
 
             <View style={styles.receiptsSection}>
               <View style={styles.receiptsHeader}>
