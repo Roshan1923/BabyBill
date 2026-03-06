@@ -43,7 +43,7 @@ const PLANS = {
   essential: {
     id: 'essential',
     name: 'Essential',
-    price: '$8.99',
+    price: '$12.99',
     credits: '100',
     tagline: 'For regular receipt tracking',
     includeLine: 'Includes 100 scans every month',
@@ -63,7 +63,7 @@ const PLANS = {
   premium: {
     id: 'premium',
     name: 'Premium',
-    price: '$12.99',
+    price: '$17.99',
     credits: '250',
     tagline: 'For power users & businesses',
     includeLine: 'Includes 250 scans every month',
