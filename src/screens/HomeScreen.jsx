@@ -379,9 +379,8 @@ function HeaderRow({ userName = "User", navigation, credits }) {
             Alert.alert("Top Up", `Purchase +${amount} credits — RevenueCat flow coming soon.`);
           }}
           onViewPlans={() => {
-            // TODO: navigate to Paywall screen
-            // navigation.navigate('Paywall')
-            Alert.alert("Plans", "Subscription plans screen coming soon.");
+            
+            navigation.navigate('Paywall');
           }}
         />
 

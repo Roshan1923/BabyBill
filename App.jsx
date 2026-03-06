@@ -14,6 +14,7 @@ import { supabase } from './src/config/supabase';
 
 // Main app screens
 import TabNavigator from './src/navigation/TabNavigator';
+import PaywallScreen from './src/screens/PaywallScreen';
 import DetailScreen from './src/screens/DetailScreen';
 import ManualEntryScreen from './src/screens/ManualEntryScreen';
 import ScanGalleryScreen from './src/screens/ScanGalleryScreen';
@@ -165,6 +166,11 @@ const App = () => {
                         name="Categories"
                         component={CategoryScreen}
                         options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                        name="Paywall"
+                        component={PaywallScreen}
+                        options={{ animation: 'slide_from_bottom' }}
                         />    
                         <Stack.Screen name="Notifications" component={NotificationScreen} />
                       </>
