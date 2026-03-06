@@ -87,9 +87,9 @@ const PLANS = {
 };
 
 const TOPUPS = [
-  { credits: 25, price: '$2.99', perCredit: '$0.12/credit', productId: 'billbrain_topup_25', packageId: 'topup_25' },
-  { credits: 50, price: '$4.99', perCredit: '$0.10/credit', badge: 'POPULAR', productId: 'billbrain_topup_50', packageId: 'topup_50' },
-  { credits: 100, price: '$7.99', perCredit: '$0.08/credit', badge: 'BEST VALUE', productId: 'billbrain_topup_100', packageId: 'topup_100' },
+  { credits: 25, price: '$3.99', perCredit: '$0.16/credit', productId: 'billbrain_topup_25', packageId: 'topup_25' },
+  { credits: 50, price: '$5.99', perCredit: '$0.12/credit', badge: 'POPULAR', productId: 'billbrain_topup_50', packageId: 'topup_50' },
+  { credits: 100, price: '$9.99', perCredit: '$0.09/credit', badge: 'BEST VALUE', productId: 'billbrain_topup_100', packageId: 'topup_100' },
 ];
 
 const TABS = [
