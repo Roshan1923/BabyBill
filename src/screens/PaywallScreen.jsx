@@ -503,11 +503,7 @@ export default function PaywallScreen({ navigation }) {
                 {/* Premium Extras Section */}
                 {plan.premiumExtras.length > 0 && (
                   <>
-                    <View style={styles.extrasDivider}>
-                      <View style={styles.extrasDividerLine} />
-                      <Text style={[styles.extrasLabel, { color: accentColor }]}>PREMIUM EXTRAS</Text>
-                      <View style={styles.extrasDividerLine} />
-                    </View>
+
                     {plan.premiumExtras.map((b, i) => (
                       <PremiumExtraRow
                         key={`${activeTab}-extra-${i}`}
