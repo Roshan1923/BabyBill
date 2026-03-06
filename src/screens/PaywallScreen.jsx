@@ -11,27 +11,34 @@ import {
   Animated,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Icon from 'react-native-vector-icons/Feather';
 import Purchases from 'react-native-purchases';
 import { useCredits } from '../context/CreditsContext';
+import LinearGradient from 'react-native-linear-gradient';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── Design Tokens ───────────────────────────────────────────
 const DS = {
   bgPage: '#FAF8F4',
   bgSurface: '#FFFEFB',
   bgSurface2: '#F5F2EC',
+  bgDark: '#0F1923',
   brandNavy: '#1A3A6B',
+  brandNavyLight: '#2A5090',
   accentGold: '#E8A020',
+  accentGoldLight: '#F4BC5C',
   accentGoldSub: '#FEF3DC',
   textPrimary: '#1C1610',
   textSecondary: '#8A7E72',
+  textMuted: '#B8B0A4',
   textInverse: '#FFFEFB',
   positive: '#2A8C5C',
-  negative: '#C8402A',
   border: '#EDE8E0',
-  shadow: 'rgba(26,58,107,0.10)',
+  borderLight: '#F5F2EC',
 };
 
 // ─── Plan Data ───────────────────────────────────────────────
@@ -40,19 +47,18 @@ const PLANS = {
     id: 'essential',
     name: 'Essential',
     price: '$8.99',
-    period: '/month',
     credits: '100',
     tagline: 'For regular receipt tracking',
-    color: DS.brandNavy,
-    features: [
-      { icon: 'scan-outline', text: '100 scan credits/month', included: true },
-      { icon: 'cloud-upload-outline', text: 'Upload & scan receipts', included: true },
-      { icon: 'folder-outline', text: 'Custom categories', included: true },
-      { icon: 'download-outline', text: 'Export to Excel', included: true },
-      { icon: 'card-outline', text: 'Payment card tracking', included: true },
-      { icon: 'chatbubble-ellipses-outline', text: 'AI Chat assistant', included: false },
-      { icon: 'analytics-outline', text: 'Advanced analytics', included: false },
-      { icon: 'people-outline', text: 'Priority support', included: false },
+    accentColor: DS.brandNavy,
+    accentLight: DS.brandNavyLight,
+    gradientStart: '#1A3A6B',
+    gradientEnd: '#2A5090',
+    benefits: [
+      { icon: 'scan-outline', text: 'Scan & upload receipts', highlight: false },
+      { icon: 'folder-open-outline', text: 'Custom categories & tags', highlight: false },
+      { icon: 'download-outline', text: 'Export to Excel & PDF', highlight: false },
+      { icon: 'card-outline', text: 'Payment card tracking', highlight: false },
+      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup', highlight: false },
     ],
     packageId: 'essential_monthly',
   },
@@ -60,203 +66,282 @@ const PLANS = {
     id: 'premium',
     name: 'Premium',
     price: '$12.99',
-    period: '/month',
     credits: '250',
     tagline: 'For power users & businesses',
-    color: DS.accentGold,
-    badge: 'BEST VALUE',
-    features: [
-      { icon: 'scan-outline', text: '250 scan credits/month', included: true },
-      { icon: 'cloud-upload-outline', text: 'Upload & scan receipts', included: true },
-      { icon: 'folder-outline', text: 'Custom categories', included: true },
-      { icon: 'download-outline', text: 'Export to Excel', included: true },
-      { icon: 'card-outline', text: 'Payment card tracking', included: true },
-      { icon: 'chatbubble-ellipses-outline', text: 'AI Chat assistant', included: true },
-      { icon: 'analytics-outline', text: 'Advanced analytics', included: true },
-      { icon: 'people-outline', text: 'Priority support', included: true },
+    accentColor: DS.accentGold,
+    accentLight: DS.accentGoldLight,
+    gradientStart: '#E8A020',
+    gradientEnd: '#D4901A',
+    benefits: [
+      { icon: 'scan-outline', text: 'Scan & upload receipts', highlight: false },
+      { icon: 'folder-open-outline', text: 'Custom categories & tags', highlight: false },
+      { icon: 'download-outline', text: 'Export to Excel & PDF', highlight: false },
+      { icon: 'card-outline', text: 'Payment card tracking', highlight: false },
+      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup', highlight: false },
+      { icon: 'chatbubble-ellipses-outline', text: 'AI Chat assistant', highlight: true },
+      { icon: 'analytics-outline', text: 'Advanced analytics', highlight: true },
+      { icon: 'diamond-outline', text: 'Priority support', highlight: true },
     ],
     packageId: 'premium_monthly',
   },
 };
 
-// ─── Toggle Component ────────────────────────────────────────
-function PlanToggle({ selected, onSelect }) {
-  const slideAnim = useRef(new Animated.Value(selected === 'essential' ? 0 : 1)).current;
+const TOPUPS = [
+  { credits: 25, price: '$2.99', perCredit: '$0.12/credit', packageId: 'topup_25' },
+  { credits: 50, price: '$4.99', perCredit: '$0.10/credit', badge: 'POPULAR', packageId: 'topup_50' },
+  { credits: 100, price: '$7.99', perCredit: '$0.08/credit', badge: 'BEST VALUE', packageId: 'topup_100' },
+];
+
+const TABS = [
+  { key: 'essential', label: 'Essential' },
+  { key: 'premium', label: 'Premium' },
+  { key: 'topup', label: 'Top-up' },
+];
+
+// ─── Animated Tab Switcher ───────────────────────────────────
+function TabSwitcher({ activeTab, onSelect }) {
+  const slideAnim = useRef(new Animated.Value(TABS.findIndex(t => t.key === activeTab))).current;
+  const tabWidth = (SCREEN_WIDTH - 48) / 3;
 
   useEffect(() => {
     Animated.spring(slideAnim, {
-      toValue: selected === 'essential' ? 0 : 1,
-      tension: 300,
-      friction: 25,
+      toValue: TABS.findIndex(t => t.key === activeTab),
+      tension: 380,
+      friction: 28,
       useNativeDriver: true,
     }).start();
-  }, [selected]);
-
-  const translateX = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1], // Will be calculated based on layout
-  });
+  }, [activeTab]);
 
   return (
-    <View style={styles.toggleContainer}>
-      <View style={styles.toggleTrack}>
+    <View style={[styles.tabContainer, { marginHorizontal: 4 }]}>
+      <View style={styles.tabTrack}>
         <Animated.View
           style={[
-            styles.toggleSlider,
+            styles.tabIndicator,
             {
+              width: tabWidth,
               transform: [{
                 translateX: slideAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [2, (styles.toggleTrack.width || 280) / 2 - 2],
+                  inputRange: [0, 1, 2],
+                  outputRange: [0, tabWidth, tabWidth * 2],
                 }),
               }],
             },
           ]}
         />
-        <TouchableOpacity
-          style={styles.toggleOption}
-          onPress={() => onSelect('essential')}
-          activeOpacity={0.8}
-        >
-          <Text style={[
-            styles.toggleText,
-            selected === 'essential' && styles.toggleTextActive,
-          ]}>
-            Essential
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toggleOption}
-          onPress={() => onSelect('premium')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.togglePremiumWrap}>
+        {TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tabOption, { width: tabWidth }]}
+            onPress={() => onSelect(tab.key)}
+            activeOpacity={0.8}
+          >
             <Text style={[
-              styles.toggleText,
-              selected === 'premium' && styles.toggleTextActive,
+              styles.tabText,
+              activeTab === tab.key && styles.tabTextActive,
             ]}>
-              Premium
+              {tab.label}
             </Text>
-            {selected !== 'premium' && (
-              <View style={styles.toggleBadge}>
-                <Text style={styles.toggleBadgeText}>BEST</Text>
+            {tab.key === 'premium' && activeTab !== 'premium' && (
+              <View style={styles.tabStar}>
+                <Ionicons name="star" size={8} color={DS.accentGold} />
               </View>
             )}
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
       </View>
     </View>
   );
 }
 
-// ─── Feature Row ─────────────────────────────────────────────
-function FeatureRow({ icon, text, included, accentColor }) {
+// ─── Benefit Row ─────────────────────────────────────────────
+function BenefitRow({ icon, text, highlight, accentColor, index }) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(15)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 350,
+        delay: index * 50,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 350,
+        delay: index * 50,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   return (
-    <View style={styles.featureRow}>
-      <View style={[
-        styles.featureIconBox,
-        { backgroundColor: included ? (accentColor + '15') : '#F5F2EC' },
-      ]}>
-        <Ionicons
-          name={icon}
-          size={16}
-          color={included ? accentColor : '#C8C2B8'}
-        />
+    <Animated.View style={[
+      styles.benefitRow,
+      {
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      },
+    ]}>
+      <View style={[styles.benefitIcon, { backgroundColor: accentColor + '10' }]}>
+        <Ionicons name={icon} size={15} color={accentColor} />
       </View>
-      <Text style={[
-        styles.featureText,
-        !included && styles.featureTextDisabled,
-      ]}>
+      <Text style={[styles.benefitText, highlight && { color: accentColor, fontWeight: '600' }]}>
         {text}
       </Text>
-      <Ionicons
-        name={included ? 'checkmark-circle' : 'close-circle'}
-        size={18}
-        color={included ? DS.positive : '#D4CFC7'}
-      />
-    </View>
+      {highlight && (
+        <View style={[styles.newBadge, { backgroundColor: accentColor + '15' }]}>
+          <Text style={[styles.newBadgeText, { color: accentColor }]}>NEW</Text>
+        </View>
+      )}
+    </Animated.View>
+  );
+}
+
+// ─── Top-up Card ─────────────────────────────────────────────
+function TopupCard({ item, index, selected, onSelect }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const isSelected = selected === index;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => onSelect(index)}
+      onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
+      onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 8 }).start()}
+    >
+      <Animated.View style={[
+        styles.topupCard,
+        isSelected && styles.topupCardSelected,
+        { transform: [{ scale: scaleAnim }] },
+      ]}>
+        {/* Radio */}
+        <View style={[styles.radio, isSelected && styles.radioSelected]}>
+          {isSelected && <View style={styles.radioDot} />}
+        </View>
+
+        {/* Info */}
+        <View style={styles.topupInfo}>
+          <View style={styles.topupTitleRow}>
+            <Text style={styles.topupCredits}>+{item.credits}</Text>
+            <Text style={styles.topupCreditsLabel}>credits</Text>
+            {item.badge && (
+              <View style={styles.topupBadge}>
+                <Text style={styles.topupBadgeText}>{item.badge}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.topupPerCredit}>{item.perCredit}</Text>
+        </View>
+
+        {/* Price */}
+        <Text style={[styles.topupPrice, isSelected && styles.topupPriceSelected]}>
+          {item.price}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
 // ─── Main PaywallScreen ──────────────────────────────────────
 export default function PaywallScreen({ navigation }) {
-  const [selectedPlan, setSelectedPlan] = useState('premium');
+  const [activeTab, setActiveTab] = useState('premium');
+  const [selectedTopup, setSelectedTopup] = useState(1);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const { fetchCredits, tierName, isSubscribed } = useCredits();
 
-  const plan = PLANS[selectedPlan];
-  const cardScale = useRef(new Animated.Value(1)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const plan = PLANS[activeTab] || PLANS.premium;
+  const isTopup = activeTab === 'topup';
+  const isPremium = activeTab === 'premium';
 
+  const contentFade = useRef(new Animated.Value(1)).current;
+  const contentSlide = useRef(new Animated.Value(0)).current;
+  const headerFade = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.8)).current;
+
+  // Entry animation
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(headerFade, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(logoScale, { toValue: 1, tension: 200, friction: 15, useNativeDriver: true }),
+    ]).start();
   }, []);
 
-  // Animate card on plan switch
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(cardScale, { toValue: 0.97, duration: 100, useNativeDriver: true }),
-      Animated.spring(cardScale, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }),
-    ]).start();
-  }, [selectedPlan]);
+  // Tab switch animation
+  const switchTab = (tab) => {
+    if (tab === activeTab) return;
+    Animated.parallel([
+      Animated.timing(contentFade, { toValue: 0, duration: 120, useNativeDriver: true }),
+      Animated.timing(contentSlide, { toValue: -8, duration: 120, useNativeDriver: true }),
+    ]).start(() => {
+      setActiveTab(tab);
+      contentSlide.setValue(8);
+      Animated.parallel([
+        Animated.timing(contentFade, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.spring(contentSlide, { toValue: 0, tension: 300, friction: 25, useNativeDriver: true }),
+      ]).start();
+    });
+  };
 
+  // ── Purchase Logic ──
   const handlePurchase = useCallback(async () => {
     try {
       setPurchasing(true);
-
-      // Get offerings from RevenueCat
       const offerings = await Purchases.getOfferings();
       const offering = offerings.current;
-
       if (!offering) {
         Alert.alert('Error', 'No offerings available. Please try again later.');
         return;
       }
 
-      // Find the package matching the selected plan
-      const pkg = offering.availablePackages.find(
-        (p) => p.identifier === plan.packageId
-      );
+      let pkg;
+      if (isTopup) {
+        const topup = TOPUPS[selectedTopup];
+        pkg = offering.availablePackages.find(p => p.identifier === topup.packageId);
+      } else {
+        pkg = offering.availablePackages.find(p => p.identifier === plan.packageId);
+      }
 
       if (!pkg) {
-        Alert.alert('Error', `${plan.name} plan is not available right now.`);
+        Alert.alert('Error', 'This package is not available right now.');
         return;
       }
 
-      // Purchase the package
       const { customerInfo } = await Purchases.purchasePackage(pkg);
 
-      // Check if entitlement is now active
-      const entitlementId = selectedPlan === 'premium' ? 'premium_access' : 'essential_access';
-      if (customerInfo.entitlements.active[entitlementId]) {
-        // Refresh credits from backend (webhook should have updated by now)
+      if (isTopup) {
         await fetchCredits();
-
         Alert.alert(
-          'Welcome to ' + plan.name + '! 🎉',
-          `You now have ${plan.credits} scan credits per month.`,
-          [{ text: 'Let\'s Go', onPress: () => navigation.goBack() }]
+          'Credits Added! ⚡',
+          `+${TOPUPS[selectedTopup].credits} scan credits have been added to your account.`,
+          [{ text: 'Great', onPress: () => navigation.goBack() }]
         );
+      } else {
+        const entitlementId = activeTab === 'premium' ? 'premium_access' : 'essential_access';
+        if (customerInfo.entitlements.active[entitlementId]) {
+          await fetchCredits();
+          Alert.alert(
+            `Welcome to ${plan.name}! 🎉`,
+            `You now have ${plan.credits} scan credits per month.`,
+            [{ text: "Let's Go", onPress: () => navigation.goBack() }]
+          );
+        }
       }
     } catch (error) {
       if (!error.userCancelled) {
-        Alert.alert('Purchase Failed', error.message || 'Something went wrong. Please try again.');
+        Alert.alert('Purchase Failed', error.message || 'Something went wrong.');
       }
     } finally {
       setPurchasing(false);
     }
-  }, [selectedPlan, plan, fetchCredits, navigation]);
+  }, [activeTab, selectedTopup, plan, isTopup, fetchCredits, navigation]);
 
   const handleRestore = useCallback(async () => {
     try {
       setRestoring(true);
       const customerInfo = await Purchases.restorePurchases();
-
       const hasEssential = customerInfo.entitlements.active['essential_access'];
       const hasPremium = customerInfo.entitlements.active['premium_access'];
 
@@ -268,173 +353,186 @@ export default function PaywallScreen({ navigation }) {
           [{ text: 'Great', onPress: () => navigation.goBack() }]
         );
       } else {
-        Alert.alert('No Purchases Found', 'We couldn\'t find any previous purchases to restore.');
+        Alert.alert('No Purchases Found', "We couldn't find any previous purchases to restore.");
       }
     } catch (error) {
-      Alert.alert('Restore Failed', error.message || 'Something went wrong. Please try again.');
+      Alert.alert('Restore Failed', error.message || 'Something went wrong.');
     } finally {
       setRestoring(false);
     }
   }, [fetchCredits, navigation]);
 
+  // ── Button label ──
+  const getButtonLabel = () => {
+    if (isTopup) return `Buy +${TOPUPS[selectedTopup].credits} Credits — ${TOPUPS[selectedTopup].price}`;
+    return `Subscribe to ${plan.name} — ${plan.price}/mo`;
+  };
+
+  const accentColor = isTopup ? DS.brandNavy : plan.accentColor;
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <Icon name="arrow-left" size={20} color={DS.textPrimary} />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+          <Icon name="x" size={18} color={DS.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Choose Your Plan</Text>
-        <View style={styles.backBtn} />
+        <TouchableOpacity onPress={handleRestore} activeOpacity={0.7} disabled={restoring} style={styles.restoreBtn}>
+          {restoring ? (
+            <ActivityIndicator size="small" color={DS.textSecondary} />
+          ) : (
+            <Text style={styles.restoreText}>Restore</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-      >
-        <Animated.View style={{ opacity: fadeAnim }}>
-
-          {/* Current plan badge */}
-          {isSubscribed ? (
-            <View style={styles.currentPlanBadge}>
-              <Ionicons name="checkmark-circle" size={14} color={DS.positive} />
-              <Text style={styles.currentPlanText}>
-                You're on {tierName}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.currentPlanBadge}>
-              <Ionicons name="flash-outline" size={14} color={DS.accentGold} />
-              <Text style={styles.currentPlanText}>
-                Upgrade for more scans
-              </Text>
-            </View>
-          )}
-
-          {/* Toggle */}
-          <PlanToggle selected={selectedPlan} onSelect={setSelectedPlan} />
-
-          {/* Plan Card */}
-          <Animated.View style={[styles.planCard, { transform: [{ scale: cardScale }] }]}>
-            {/* Plan badge */}
-            {plan.badge && (
-              <View style={[styles.planBadge, { backgroundColor: plan.color }]}>
-                <Text style={styles.planBadgeText}>{plan.badge}</Text>
-              </View>
-            )}
-
-            {/* Price section */}
-            <View style={styles.priceSection}>
-              <View style={styles.priceRow}>
-                <Text style={[styles.priceAmount, { color: plan.color }]}>
-                  {plan.price}
-                </Text>
-                <Text style={styles.pricePeriod}>{plan.period}</Text>
-              </View>
-              <Text style={styles.planTagline}>{plan.tagline}</Text>
-            </View>
-
-            {/* Credits highlight */}
-            <View style={[styles.creditsHighlight, { backgroundColor: plan.color + '10' }]}>
-              <Ionicons name="flash" size={20} color={plan.color} />
-              <View style={styles.creditsTextWrap}>
-                <Text style={[styles.creditsNumber, { color: plan.color }]}>
-                  {plan.credits}
-                </Text>
-                <Text style={styles.creditsLabel}>scan credits/month</Text>
-              </View>
-            </View>
-
-            {/* Divider */}
-            <View style={styles.divider} />
-
-            {/* Features */}
-            <Text style={styles.featuresTitle}>What's included</Text>
-            {plan.features.map((feature, index) => (
-              <FeatureRow
-                key={index}
-                icon={feature.icon}
-                text={feature.text}
-                included={feature.included}
-                accentColor={plan.color}
-              />
-            ))}
-          </Animated.View>
-
-          {/* Subscribe button */}
-          <TouchableOpacity
-            style={[
-              styles.subscribeBtn,
-              { backgroundColor: plan.color },
-              purchasing && styles.subscribeBtnDisabled,
-            ]}
-            onPress={handlePurchase}
-            activeOpacity={0.85}
-            disabled={purchasing || restoring}
-          >
-            {purchasing ? (
-              <ActivityIndicator size="small" color={DS.textInverse} />
-            ) : (
-              <>
-                <Ionicons name="flash" size={18} color={DS.textInverse} style={{ marginRight: 8 }} />
-                <Text style={styles.subscribeBtnText}>
-                  Subscribe to {plan.name}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Cancel anytime note */}
-          <Text style={styles.cancelNote}>
-            Cancel anytime. Billed monthly.
-          </Text>
-
-          {/* Top-up link */}
-          <TouchableOpacity
-            style={styles.topupLink}
-            activeOpacity={0.7}
-            onPress={() => {
-              // TODO: navigate to top-up screen or show bottom sheet
-              Alert.alert('Top-ups', 'Credit top-up packs coming soon.');
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={16} color={DS.brandNavy} />
-            <Text style={styles.topupLinkText}>
-              Just need a few scans? Buy credit packs
-            </Text>
-          </TouchableOpacity>
-
-          {/* Restore purchases */}
-          <TouchableOpacity
-            style={styles.restoreBtn}
-            onPress={handleRestore}
-            activeOpacity={0.7}
-            disabled={purchasing || restoring}
-          >
-            {restoring ? (
-              <ActivityIndicator size="small" color={DS.textSecondary} />
-            ) : (
-              <Text style={styles.restoreText}>Restore Purchases</Text>
-            )}
-          </TouchableOpacity>
-
+      {/* ── Logo + Tagline ── */}
+      <Animated.View style={[styles.heroSection, { opacity: headerFade }]}>
+        <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
+          <View style={styles.logoGlow} />
+          <View style={styles.logoBox}>
+            <Ionicons name="receipt-outline" size={26} color={DS.textInverse} />
+          </View>
         </Animated.View>
-      </ScrollView>
+        <Text style={styles.heroTitle}>Unlock BillBrain</Text>
+        <Text style={styles.heroSubtitle}>Scan more receipts. Save more time.</Text>
+      </Animated.View>
+
+      {/* ── Tabs ── */}
+      <TabSwitcher activeTab={activeTab} onSelect={switchTab} />
+
+      {/* ── Content ── */}
+      <Animated.View style={[
+        styles.contentArea,
+        {
+          opacity: contentFade,
+          transform: [{ translateY: contentSlide }],
+        },
+      ]}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+        >
+          {!isTopup ? (
+            /* ── Subscription View ── */
+            <>
+              {/* Price Card */}
+              <View style={[
+                styles.priceCard,
+                { borderColor: accentColor + '30' },
+              ]}>
+                {/* Top accent line */}
+                <View style={[styles.priceCardAccent, { backgroundColor: accentColor }]} />
+
+                <View style={styles.priceCardInner}>
+                  {/* Plan name + tagline */}
+                  <View style={styles.planNameRow}>
+                    <Text style={[styles.planName, { color: accentColor }]}>{plan.name}</Text>
+                    <View style={[styles.planPill, { backgroundColor: accentColor + '12' }]}>
+                      <Ionicons name="flash" size={11} color={accentColor} />
+                      <Text style={[styles.planPillText, { color: accentColor }]}>{plan.credits} credits/mo</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.planTagline}>{plan.tagline}</Text>
+
+                  {/* Price */}
+                  <View style={styles.priceRow}>
+                    <Text style={[styles.priceAmount, { color: accentColor }]}>{plan.price}</Text>
+                    <View style={styles.pricePerioCol}>
+                      <Text style={styles.pricePeriod}>per</Text>
+                      <Text style={styles.pricePeriod}>month</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Benefits */}
+              <View style={styles.benefitsCard}>
+                <Text style={styles.benefitsLabel}>WHAT'S INCLUDED</Text>
+                {plan.benefits.map((b, i) => (
+                  <BenefitRow
+                    key={`${activeTab}-${i}`}
+                    icon={b.icon}
+                    text={b.text}
+                    highlight={b.highlight}
+                    accentColor={accentColor}
+                    index={i}
+                  />
+                ))}
+              </View>
+            </>
+          ) : (
+            /* ── Top-up View ── */
+            <>
+              <Text style={styles.topupIntro}>
+                Need a few extra scans? Grab a credit pack.{'\n'}
+                <Text style={styles.topupIntroHighlight}>They never expire.</Text>
+              </Text>
+              {TOPUPS.map((item, index) => (
+                <TopupCard
+                  key={index}
+                  item={item}
+                  index={index}
+                  selected={selectedTopup}
+                  onSelect={setSelectedTopup}
+                />
+              ))}
+            </>
+          )}
+          {/* Bottom spacer for button */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </Animated.View>
+
+      {/* ── Fixed Bottom ── */}
+      <View style={styles.bottomArea}>
+        <TouchableOpacity
+          style={[
+            styles.subscribeBtn,
+            { backgroundColor: accentColor },
+            purchasing && styles.subscribeBtnDisabled,
+          ]}
+          onPress={handlePurchase}
+          activeOpacity={0.85}
+          disabled={purchasing || restoring}
+        >
+          {purchasing ? (
+            <ActivityIndicator size="small" color={DS.textInverse} />
+          ) : (
+            <>
+              <Ionicons name="flash" size={16} color={DS.textInverse} style={{ marginRight: 8 }} />
+              <Text style={styles.subscribeBtnText}>{getButtonLabel()}</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.termsText}>
+          {isTopup
+            ? 'One-time purchase · Credits never expire'
+            : 'Cancel anytime · Billed monthly'
+          }
+        </Text>
+        {!isTopup && (
+          <View style={styles.termsLinks}>
+            <TouchableOpacity activeOpacity={0.6}>
+              <Text style={styles.termLink}>Terms of Use</Text>
+            </TouchableOpacity>
+            <Text style={styles.termsDot}>·</Text>
+            <TouchableOpacity activeOpacity={0.6}>
+              <Text style={styles.termLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 // ─── Styles ──────────────────────────────────────────────────
-const TOGGLE_WIDTH = 280;
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
@@ -447,244 +545,386 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: DS.bgSurface,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: DS.textPrimary,
-  },
-
-  // Scroll
-  scroll: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-
-  // Current plan badge
-  currentPlanBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: DS.bgSurface,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: DS.border,
   },
-  currentPlanText: {
+  restoreBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  restoreText: {
     fontSize: 13,
     fontWeight: '500',
     color: DS.textSecondary,
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
   },
 
-  // Toggle
-  toggleContainer: {
+  // Hero
+  heroSection: {
     alignItems: 'center',
-    marginBottom: 20,
+    paddingTop: 4,
+    paddingBottom: 16,
   },
-  toggleTrack: {
-    width: TOGGLE_WIDTH,
-    height: 48,
-    backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    flexDirection: 'row',
+  logoContainer: {
+    marginBottom: 12,
+    position: 'relative',
+  },
+  logoGlow: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: DS.brandNavy + '15',
+    top: -4,
+    left: -4,
+  },
+  logoBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: DS.brandNavy,
     alignItems: 'center',
-    padding: 3,
-    borderWidth: 1,
-    borderColor: DS.border,
+    justifyContent: 'center',
     ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 10 },
-      android: { elevation: 2 },
+      ios: {
+        shadowColor: DS.brandNavy,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
+      },
+      android: { elevation: 8 },
     }),
   },
-  toggleSlider: {
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: DS.textPrimary,
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  heroSubtitle: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: DS.textSecondary,
+  },
+
+  // Tabs
+  tabContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  tabTrack: {
+    flexDirection: 'row',
+    backgroundColor: DS.bgSurface2,
+    borderRadius: 14,
+    padding: 3,
+    position: 'relative',
+  },
+  tabIndicator: {
     position: 'absolute',
-    width: TOGGLE_WIDTH / 2 - 4,
-    height: 42,
-    backgroundColor: DS.brandNavy,
-    borderRadius: 21,
+    top: 3,
     left: 3,
+    height: '100%',
+    backgroundColor: DS.brandNavy,
+    borderRadius: 12,
     ...Platform.select({
-      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      ios: {
+        shadowColor: DS.brandNavy,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+      },
       android: { elevation: 4 },
     }),
   },
-  toggleOption: {
-    flex: 1,
+  tabOption: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 42,
-    zIndex: 1,
-  },
-  togglePremiumWrap: {
+    paddingVertical: 11,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+    zIndex: 1,
+    gap: 4,
   },
-  toggleText: {
-    fontSize: 14,
+  tabText: {
+    fontSize: 13,
     fontWeight: '600',
     color: DS.textSecondary,
   },
-  toggleTextActive: {
+  tabTextActive: {
     color: DS.textInverse,
   },
-  toggleBadge: {
-    backgroundColor: DS.accentGold,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  toggleBadgeText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: DS.textInverse,
-    letterSpacing: 0.5,
+  tabStar: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: DS.accentGoldSub,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  // Plan Card
-  planCard: {
+  // Content
+  contentArea: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 2,
+  },
+
+  // Price Card
+  priceCard: {
     backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: DS.border,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    marginBottom: 14,
     ...Platform.select({
-      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 24 },
-      android: { elevation: 4 },
+      ios: {
+        shadowColor: DS.brandNavy,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 20,
+      },
+      android: { elevation: 3 },
     }),
   },
-  planBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 16,
+  priceCardAccent: {
+    height: 4,
+    width: '100%',
   },
-  planBadgeText: {
-    fontSize: 10,
+  priceCardInner: {
+    padding: 22,
+  },
+  planNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  planName: {
+    fontSize: 22,
     fontWeight: '800',
-    color: DS.textInverse,
-    letterSpacing: 0.8,
+    letterSpacing: -0.3,
   },
-
-  // Price
-  priceSection: {
-    marginBottom: 20,
+  planPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 4,
+  },
+  planPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  planTagline: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: DS.textSecondary,
+    marginBottom: 18,
   },
   priceRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'flex-end',
+    gap: 8,
   },
   priceAmount: {
-    fontSize: 42,
+    fontSize: 48,
     fontWeight: '800',
-    letterSpacing: -1,
+    letterSpacing: -2,
+    lineHeight: 50,
+  },
+  pricePerioCol: {
+    marginBottom: 6,
   },
   pricePeriod: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: DS.textSecondary,
-    marginLeft: 4,
-  },
-  planTagline: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: DS.textSecondary,
-    marginTop: 4,
-  },
-
-  // Credits highlight
-  creditsHighlight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 16,
-    gap: 12,
-    marginBottom: 20,
-  },
-  creditsTextWrap: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  creditsNumber: {
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  creditsLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: DS.textSecondary,
-  },
-
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: DS.border,
-    marginBottom: 20,
-  },
-
-  // Features
-  featuresTitle: {
     fontSize: 13,
-    fontWeight: '600',
-    color: DS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    fontWeight: '500',
+    color: DS.textMuted,
+    lineHeight: 16,
+  },
+
+  // Benefits
+  benefitsCard: {
+    backgroundColor: DS.bgSurface,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: DS.border,
+  },
+  benefitsLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DS.textMuted,
+    letterSpacing: 1.2,
     marginBottom: 14,
   },
-  featureRow: {
+  benefitRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     gap: 12,
   },
-  featureIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+  benefitIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featureText: {
+  benefitText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '500',
     color: DS.textPrimary,
   },
-  featureTextDisabled: {
-    color: '#C8C2B8',
+  newBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  newBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
 
-  // Subscribe button
+  // Top-up
+  topupIntro: {
+    fontSize: 15,
+    fontWeight: '400',
+    color: DS.textSecondary,
+    lineHeight: 22,
+    marginBottom: 18,
+  },
+  topupIntroHighlight: {
+    fontWeight: '600',
+    color: DS.textPrimary,
+  },
+  topupCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: DS.bgSurface,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: DS.border,
+    gap: 14,
+  },
+  topupCardSelected: {
+    borderColor: DS.brandNavy,
+    backgroundColor: DS.bgSurface,
+    ...Platform.select({
+      ios: {
+        shadowColor: DS.brandNavy,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: DS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioSelected: {
+    borderWidth: 2,
+    borderColor: DS.brandNavy,
+  },
+  radioDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: DS.brandNavy,
+  },
+  topupInfo: {
+    flex: 1,
+  },
+  topupTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  topupCredits: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DS.textPrimary,
+  },
+  topupCreditsLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: DS.textSecondary,
+  },
+  topupBadge: {
+    backgroundColor: DS.accentGoldSub,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  topupBadgeText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: DS.accentGold,
+    letterSpacing: 0.5,
+  },
+  topupPerCredit: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: DS.textMuted,
+  },
+  topupPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: DS.textSecondary,
+  },
+  topupPriceSelected: {
+    color: DS.brandNavy,
+  },
+
+  // Bottom fixed area
+  bottomArea: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 20,
+    backgroundColor: DS.bgPage,
+    borderTopWidth: 1,
+    borderTopColor: DS.border + '80',
+  },
   subscribeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 56,
     borderRadius: 28,
-    marginTop: 24,
     ...Platform.select({
-      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12 },
+      ios: {
+        shadowColor: DS.brandNavy,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
       android: { elevation: 6 },
     }),
   },
@@ -692,46 +932,33 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   subscribeBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: DS.textInverse,
+    letterSpacing: 0.2,
   },
-
-  // Cancel note
-  cancelNote: {
+  termsText: {
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '400',
-    color: DS.textSecondary,
-    marginTop: 12,
+    color: DS.textMuted,
+    marginTop: 10,
   },
-
-  // Top-up link
-  topupLink: {
+  termsLinks: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 24,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: DS.border,
+    marginTop: 4,
   },
-  topupLinkText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: DS.brandNavy,
-  },
-
-  // Restore
-  restoreBtn: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  restoreText: {
-    fontSize: 13,
+  termLink: {
+    fontSize: 11,
     fontWeight: '500',
     color: DS.textSecondary,
     textDecorationLine: 'underline',
+  },
+  termsDot: {
+    fontSize: 11,
+    color: DS.textMuted,
   },
 });
