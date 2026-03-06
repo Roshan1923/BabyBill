@@ -24,6 +24,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
 import { launchImageLibrary } from "react-native-image-picker";
 import { useProcessing } from "../context/ProcessingContext";
+import { useCredits } from "../context/CreditsContext";
 import { useNotifications } from "../context/NotificationContext";
 import {
   requestPermissionWithBlockedHandling,
@@ -696,7 +697,7 @@ export default function HomeScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
   const [credits, setCredits] = useState(null);
 
-  const { fetchCredits } = useProcessing();
+  const { fetchCredits } = useCredits();
 
   const loadCredits = useCallback(async () => {
     try {
