@@ -24,7 +24,7 @@ import { useScanQueue } from '../context/ScanContext';
 import { useProcessing } from '../context/ProcessingContext';
 import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
-const { totalRemaining, canScan } = useCredits();
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 import { useCredits } from '../context/CreditsContext';
 // ─── Design System Tokens ────────────────────────────────────
@@ -56,6 +56,7 @@ const OVERLAY = {
 };
 
 export default function ScanScreen({ navigation }) {
+  const { totalRemaining, canScan } = useCredits();
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
