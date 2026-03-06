@@ -721,7 +721,7 @@ const styles = StyleSheet.create({
     fontSize: 13, fontWeight: '500', color: DS.textSecondary, lineHeight: 16,
   },
   includeLine: {
-    fontSize: 12, fontWeight: '500',
+    fontSize: 12, fontWeight: '600',
     color: DS.textSecondary, marginTop: 8,
   },
 
