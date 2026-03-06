@@ -26,7 +26,7 @@ import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
 const { totalRemaining, canScan } = useCredits();
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
+import { useCredits } from '../context/CreditsContext';
 // ─── Design System Tokens ────────────────────────────────────
 const DS = {
   bgPage:        '#FAF8F4',
