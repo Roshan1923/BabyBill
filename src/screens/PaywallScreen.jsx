@@ -17,7 +17,6 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import Icon from 'react-native-vector-icons/Feather';
 import Purchases from 'react-native-purchases';
 import { useCredits } from '../context/CreditsContext';
-import LinearGradient from 'react-native-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -26,7 +25,6 @@ const DS = {
   bgPage: '#FAF8F4',
   bgSurface: '#FFFEFB',
   bgSurface2: '#F5F2EC',
-  bgDark: '#0F1923',
   brandNavy: '#1A3A6B',
   brandNavyLight: '#2A5090',
   accentGold: '#E8A020',
@@ -38,7 +36,6 @@ const DS = {
   textInverse: '#FFFEFB',
   positive: '#2A8C5C',
   border: '#EDE8E0',
-  borderLight: '#F5F2EC',
 };
 
 // ─── Plan Data ───────────────────────────────────────────────
@@ -49,17 +46,18 @@ const PLANS = {
     price: '$8.99',
     credits: '100',
     tagline: 'For regular receipt tracking',
+    includeLine: 'Includes 100 scans every month',
     accentColor: DS.brandNavy,
     accentLight: DS.brandNavyLight,
-    gradientStart: '#1A3A6B',
-    gradientEnd: '#2A5090',
-    benefits: [
-      { icon: 'scan-outline', text: 'Scan & upload receipts', highlight: false },
-      { icon: 'folder-open-outline', text: 'Custom categories & tags', highlight: false },
-      { icon: 'download-outline', text: 'Export to Excel & PDF', highlight: false },
-      { icon: 'card-outline', text: 'Payment card tracking', highlight: false },
-      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup', highlight: false },
+    coreBenefits: [
+      { icon: 'scan-outline', text: 'Scan & upload receipts' },
+      { icon: 'folder-open-outline', text: 'Custom categories & tags' },
+      { icon: 'download-outline', text: 'Export to Excel & PDF' },
+      { icon: 'card-outline', text: 'Payment card tracking' },
+      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup' },
     ],
+    premiumExtras: [],
+    productId: 'billbrain_essential_monthly',
     packageId: 'essential_monthly',
   },
   premium: {
@@ -68,28 +66,30 @@ const PLANS = {
     price: '$12.99',
     credits: '250',
     tagline: 'For power users & businesses',
+    includeLine: 'Includes 250 scans every month',
     accentColor: DS.accentGold,
     accentLight: DS.accentGoldLight,
-    gradientStart: '#E8A020',
-    gradientEnd: '#D4901A',
-    benefits: [
-      { icon: 'scan-outline', text: 'Scan & upload receipts', highlight: false },
-      { icon: 'folder-open-outline', text: 'Custom categories & tags', highlight: false },
-      { icon: 'download-outline', text: 'Export to Excel & PDF', highlight: false },
-      { icon: 'card-outline', text: 'Payment card tracking', highlight: false },
-      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup', highlight: false },
-      { icon: 'chatbubble-ellipses-outline', text: 'AI Chat assistant', highlight: true },
-      { icon: 'analytics-outline', text: 'Advanced analytics', highlight: true },
-      { icon: 'diamond-outline', text: 'Priority support', highlight: true },
+    coreBenefits: [
+      { icon: 'scan-outline', text: 'Scan & upload receipts' },
+      { icon: 'folder-open-outline', text: 'Custom categories & tags' },
+      { icon: 'download-outline', text: 'Export to Excel & PDF' },
+      { icon: 'card-outline', text: 'Payment card tracking' },
+      { icon: 'shield-checkmark-outline', text: 'Secure cloud backup' },
     ],
+    premiumExtras: [
+      { icon: 'chatbubble-ellipses-outline', text: 'AI Chat assistant' },
+      { icon: 'analytics-outline', text: 'Advanced analytics' },
+      { icon: 'diamond-outline', text: 'Priority support' },
+    ],
+    productId: 'billbrain_premium_monthly',
     packageId: 'premium_monthly',
   },
 };
 
 const TOPUPS = [
-  { credits: 25, price: '$2.99', perCredit: '$0.12/credit', packageId: 'topup_25' },
-  { credits: 50, price: '$4.99', perCredit: '$0.10/credit', badge: 'POPULAR', packageId: 'topup_50' },
-  { credits: 100, price: '$7.99', perCredit: '$0.08/credit', badge: 'BEST VALUE', packageId: 'topup_100' },
+  { credits: 25, price: '$2.99', perCredit: '$0.12/credit', productId: 'billbrain_topup_25', packageId: 'topup_25' },
+  { credits: 50, price: '$4.99', perCredit: '$0.10/credit', badge: 'POPULAR', productId: 'billbrain_topup_50', packageId: 'topup_50' },
+  { credits: 100, price: '$7.99', perCredit: '$0.08/credit', badge: 'BEST VALUE', productId: 'billbrain_topup_100', packageId: 'topup_100' },
 ];
 
 const TABS = [
@@ -98,9 +98,16 @@ const TABS = [
   { key: 'topup', label: 'Top-up' },
 ];
 
+// Tab indicator color based on active tab
+function getTabIndicatorColor(activeTab) {
+  if (activeTab === 'premium') return DS.accentGold;
+  return DS.brandNavy;
+}
+
 // ─── Animated Tab Switcher ───────────────────────────────────
 function TabSwitcher({ activeTab, onSelect }) {
   const slideAnim = useRef(new Animated.Value(TABS.findIndex(t => t.key === activeTab))).current;
+  const colorAnim = useRef(new Animated.Value(activeTab === 'premium' ? 1 : 0)).current;
   const tabWidth = (SCREEN_WIDTH - 48) / 3;
 
   useEffect(() => {
@@ -112,14 +119,17 @@ function TabSwitcher({ activeTab, onSelect }) {
     }).start();
   }, [activeTab]);
 
+  const indicatorColor = getTabIndicatorColor(activeTab);
+
   return (
-    <View style={[styles.tabContainer, { marginHorizontal: 4 }]}>
+    <View style={styles.tabContainer}>
       <View style={styles.tabTrack}>
         <Animated.View
           style={[
             styles.tabIndicator,
             {
               width: tabWidth,
+              backgroundColor: indicatorColor,
               transform: [{
                 translateX: slideAnim.interpolate({
                   inputRange: [0, 1, 2],
@@ -155,46 +165,57 @@ function TabSwitcher({ activeTab, onSelect }) {
 }
 
 // ─── Benefit Row ─────────────────────────────────────────────
-function BenefitRow({ icon, text, highlight, accentColor, index }) {
+function BenefitRow({ icon, text, accentColor, index }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(15)).current;
+  const slideAnim = useRef(new Animated.Value(12)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 350,
-        delay: index * 50,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 350,
-        delay: index * 50,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 300, delay: index * 40, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 300, delay: index * 40, useNativeDriver: true }),
     ]).start();
   }, []);
 
   return (
     <Animated.View style={[
       styles.benefitRow,
-      {
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-      },
+      { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
     ]}>
       <View style={[styles.benefitIcon, { backgroundColor: accentColor + '10' }]}>
         <Ionicons name={icon} size={15} color={accentColor} />
       </View>
-      <Text style={[styles.benefitText, highlight && { color: accentColor, fontWeight: '600' }]}>
-        {text}
-      </Text>
-      {highlight && (
-        <View style={[styles.newBadge, { backgroundColor: accentColor + '15' }]}>
-          <Text style={[styles.newBadgeText, { color: accentColor }]}>NEW</Text>
-        </View>
-      )}
+      <Text style={styles.benefitText}>{text}</Text>
+      <View style={[styles.checkCircle, { backgroundColor: DS.positive + '15' }]}>
+        <Ionicons name="checkmark" size={12} color={DS.positive} />
+      </View>
+    </Animated.View>
+  );
+}
+
+// ─── Premium Extra Row ───────────────────────────────────────
+function PremiumExtraRow({ icon, text, accentColor, index }) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 300, delay: (index + 5) * 40, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 300, delay: (index + 5) * 40, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={[
+      styles.benefitRow,
+      { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+    ]}>
+      <View style={[styles.benefitIcon, { backgroundColor: accentColor + '12' }]}>
+        <Ionicons name={icon} size={15} color={accentColor} />
+      </View>
+      <Text style={[styles.benefitText, { color: accentColor, fontWeight: '600' }]}>{text}</Text>
+      <View style={[styles.extraBadge, { backgroundColor: accentColor + '12' }]}>
+        <Text style={[styles.extraBadgeText, { color: accentColor }]}>NEW</Text>
+      </View>
     </Animated.View>
   );
 }
@@ -216,12 +237,9 @@ function TopupCard({ item, index, selected, onSelect }) {
         isSelected && styles.topupCardSelected,
         { transform: [{ scale: scaleAnim }] },
       ]}>
-        {/* Radio */}
         <View style={[styles.radio, isSelected && styles.radioSelected]}>
           {isSelected && <View style={styles.radioDot} />}
         </View>
-
-        {/* Info */}
         <View style={styles.topupInfo}>
           <View style={styles.topupTitleRow}>
             <Text style={styles.topupCredits}>+{item.credits}</Text>
@@ -234,14 +252,25 @@ function TopupCard({ item, index, selected, onSelect }) {
           </View>
           <Text style={styles.topupPerCredit}>{item.perCredit}</Text>
         </View>
-
-        {/* Price */}
         <Text style={[styles.topupPrice, isSelected && styles.topupPriceSelected]}>
           {item.price}
         </Text>
       </Animated.View>
     </TouchableOpacity>
   );
+}
+
+// ─── Safe package finder ─────────────────────────────────────
+function findPackage(offering, packageId, productId) {
+  if (!offering) return null;
+  // Try by package identifier first
+  let pkg = offering.availablePackages.find(p => p.identifier === packageId);
+  if (pkg) return pkg;
+  // Fallback: try by store product identifier
+  pkg = offering.availablePackages.find(
+    p => p.product?.identifier === productId || p.storeProduct?.identifier === productId
+  );
+  return pkg || null;
 }
 
 // ─── Main PaywallScreen ──────────────────────────────────────
@@ -285,8 +314,15 @@ export default function PaywallScreen({ navigation }) {
     });
   };
 
+  // Is user already on this plan?
+  const isCurrentPlan = isSubscribed && (
+    (activeTab === 'essential' && tierName === 'Essential') ||
+    (activeTab === 'premium' && tierName === 'Premium')
+  );
+
   // ── Purchase Logic ──
   const handlePurchase = useCallback(async () => {
+    if (isCurrentPlan) return;
     try {
       setPurchasing(true);
       const offerings = await Purchases.getOfferings();
@@ -299,9 +335,9 @@ export default function PaywallScreen({ navigation }) {
       let pkg;
       if (isTopup) {
         const topup = TOPUPS[selectedTopup];
-        pkg = offering.availablePackages.find(p => p.identifier === topup.packageId);
+        pkg = findPackage(offering, topup.packageId, topup.productId);
       } else {
-        pkg = offering.availablePackages.find(p => p.identifier === plan.packageId);
+        pkg = findPackage(offering, plan.packageId, plan.productId);
       }
 
       if (!pkg) {
@@ -336,7 +372,7 @@ export default function PaywallScreen({ navigation }) {
     } finally {
       setPurchasing(false);
     }
-  }, [activeTab, selectedTopup, plan, isTopup, fetchCredits, navigation]);
+  }, [activeTab, selectedTopup, plan, isTopup, isCurrentPlan, fetchCredits, navigation]);
 
   const handleRestore = useCallback(async () => {
     try {
@@ -344,7 +380,6 @@ export default function PaywallScreen({ navigation }) {
       const customerInfo = await Purchases.restorePurchases();
       const hasEssential = customerInfo.entitlements.active['essential_access'];
       const hasPremium = customerInfo.entitlements.active['premium_access'];
-
       if (hasEssential || hasPremium) {
         await fetchCredits();
         Alert.alert(
@@ -362,10 +397,11 @@ export default function PaywallScreen({ navigation }) {
     }
   }, [fetchCredits, navigation]);
 
-  // ── Button label ──
-  const getButtonLabel = () => {
-    if (isTopup) return `Buy +${TOPUPS[selectedTopup].credits} Credits — ${TOPUPS[selectedTopup].price}`;
-    return `Subscribe to ${plan.name} — ${plan.price}/mo`;
+  // ── CTA label ──
+  const getCtaLabel = () => {
+    if (isCurrentPlan) return 'Current Plan';
+    if (isTopup) return `Buy +${TOPUPS[selectedTopup].credits} — ${TOPUPS[selectedTopup].price}`;
+    return `Subscribe — ${plan.price}/mo`;
   };
 
   const accentColor = isTopup ? DS.brandNavy : plan.accentColor;
@@ -379,11 +415,12 @@ export default function PaywallScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
           <Icon name="x" size={18} color={DS.textPrimary} />
         </TouchableOpacity>
+
         <TouchableOpacity onPress={handleRestore} activeOpacity={0.7} disabled={restoring} style={styles.restoreBtn}>
           {restoring ? (
             <ActivityIndicator size="small" color={DS.textSecondary} />
           ) : (
-            <Text style={styles.restoreText}>Restore</Text>
+            <Text style={styles.restoreText}>Restore Purchases</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -396,8 +433,18 @@ export default function PaywallScreen({ navigation }) {
             <Ionicons name="receipt-outline" size={26} color={DS.textInverse} />
           </View>
         </Animated.View>
-        <Text style={styles.heroTitle}>Unlock BillBrain</Text>
-        <Text style={styles.heroSubtitle}>Scan more receipts. Save more time.</Text>
+        <Text style={styles.heroTitle}>Upgrade BillBrain</Text>
+        <Text style={styles.heroSubtitle}>
+          Organize your finances effortlessly
+        </Text>
+
+        {/* Current plan indicator */}
+        {isSubscribed && (
+          <View style={styles.currentPlanChip}>
+            <Ionicons name="checkmark-circle" size={13} color={DS.positive} />
+            <Text style={styles.currentPlanChipText}>Current plan: {tierName}</Text>
+          </View>
+        )}
       </Animated.View>
 
       {/* ── Tabs ── */}
@@ -406,40 +453,29 @@ export default function PaywallScreen({ navigation }) {
       {/* ── Content ── */}
       <Animated.View style={[
         styles.contentArea,
-        {
-          opacity: contentFade,
-          transform: [{ translateY: contentSlide }],
-        },
+        { opacity: contentFade, transform: [{ translateY: contentSlide }] },
       ]}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          bounces={true}
+          bounces={false}
         >
           {!isTopup ? (
-            /* ── Subscription View ── */
             <>
               {/* Price Card */}
-              <View style={[
-                styles.priceCard,
-                { borderColor: accentColor + '30' },
-              ]}>
-                {/* Top accent line */}
+              <View style={[styles.priceCard, { borderColor: accentColor + '30' }]}>
                 <View style={[styles.priceCardAccent, { backgroundColor: accentColor }]} />
-
                 <View style={styles.priceCardInner}>
-                  {/* Plan name + tagline */}
                   <View style={styles.planNameRow}>
                     <Text style={[styles.planName, { color: accentColor }]}>{plan.name}</Text>
                     <View style={[styles.planPill, { backgroundColor: accentColor + '12' }]}>
                       <Ionicons name="flash" size={11} color={accentColor} />
-                      <Text style={[styles.planPillText, { color: accentColor }]}>{plan.credits} credits/mo</Text>
+                      <Text style={[styles.planPillText, { color: accentColor }]}>{plan.credits}/mo</Text>
                     </View>
                   </View>
                   <Text style={styles.planTagline}>{plan.tagline}</Text>
 
-                  {/* Price */}
                   <View style={styles.priceRow}>
                     <Text style={[styles.priceAmount, { color: accentColor }]}>{plan.price}</Text>
                     <View style={styles.pricePerioCol}>
@@ -447,30 +483,49 @@ export default function PaywallScreen({ navigation }) {
                       <Text style={styles.pricePeriod}>month</Text>
                     </View>
                   </View>
+                  <Text style={styles.includeLine}>{plan.includeLine}</Text>
                 </View>
               </View>
 
-              {/* Benefits */}
+              {/* Core Benefits */}
               <View style={styles.benefitsCard}>
                 <Text style={styles.benefitsLabel}>WHAT'S INCLUDED</Text>
-                {plan.benefits.map((b, i) => (
+                {plan.coreBenefits.map((b, i) => (
                   <BenefitRow
-                    key={`${activeTab}-${i}`}
+                    key={`${activeTab}-core-${i}`}
                     icon={b.icon}
                     text={b.text}
-                    highlight={b.highlight}
                     accentColor={accentColor}
                     index={i}
                   />
                 ))}
+
+                {/* Premium Extras Section */}
+                {plan.premiumExtras.length > 0 && (
+                  <>
+                    <View style={styles.extrasDivider}>
+                      <View style={styles.extrasDividerLine} />
+                      <Text style={[styles.extrasLabel, { color: accentColor }]}>PREMIUM EXTRAS</Text>
+                      <View style={styles.extrasDividerLine} />
+                    </View>
+                    {plan.premiumExtras.map((b, i) => (
+                      <PremiumExtraRow
+                        key={`${activeTab}-extra-${i}`}
+                        icon={b.icon}
+                        text={b.text}
+                        accentColor={accentColor}
+                        index={i}
+                      />
+                    ))}
+                  </>
+                )}
               </View>
             </>
           ) : (
-            /* ── Top-up View ── */
             <>
               <Text style={styles.topupIntro}>
-                Need a few extra scans? Grab a credit pack.{'\n'}
-                <Text style={styles.topupIntroHighlight}>They never expire.</Text>
+                Need a few extra scans?{'\n'}
+                <Text style={styles.topupIntroHighlight}>Grab a credit pack — they never expire.</Text>
               </Text>
               {TOPUPS.map((item, index) => (
                 <TopupCard
@@ -483,8 +538,8 @@ export default function PaywallScreen({ navigation }) {
               ))}
             </>
           )}
-          {/* Bottom spacer for button */}
-          <View style={{ height: 100 }} />
+          {/* Minimal bottom spacer */}
+          <View style={{ height: 16 }} />
         </ScrollView>
       </Animated.View>
 
@@ -493,19 +548,27 @@ export default function PaywallScreen({ navigation }) {
         <TouchableOpacity
           style={[
             styles.subscribeBtn,
-            { backgroundColor: accentColor },
+            { backgroundColor: isCurrentPlan ? DS.bgSurface2 : accentColor },
+            isCurrentPlan && styles.subscribeBtnCurrent,
             purchasing && styles.subscribeBtnDisabled,
           ]}
           onPress={handlePurchase}
-          activeOpacity={0.85}
-          disabled={purchasing || restoring}
+          activeOpacity={isCurrentPlan ? 1 : 0.85}
+          disabled={purchasing || restoring || isCurrentPlan}
         >
           {purchasing ? (
-            <ActivityIndicator size="small" color={DS.textInverse} />
+            <ActivityIndicator size="small" color={isCurrentPlan ? DS.textSecondary : DS.textInverse} />
           ) : (
             <>
-              <Ionicons name="flash" size={16} color={DS.textInverse} style={{ marginRight: 8 }} />
-              <Text style={styles.subscribeBtnText}>{getButtonLabel()}</Text>
+              {!isCurrentPlan && (
+                <Ionicons name="flash" size={16} color={DS.textInverse} style={{ marginRight: 8 }} />
+              )}
+              <Text style={[
+                styles.subscribeBtnText,
+                isCurrentPlan && styles.subscribeBtnTextCurrent,
+              ]}>
+                {getCtaLabel()}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -534,10 +597,7 @@ export default function PaywallScreen({ navigation }) {
 
 // ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: DS.bgPage,
-  },
+  safe: { flex: 1, backgroundColor: DS.bgPage },
 
   // Header
   header: {
@@ -548,417 +608,245 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: DS.bgSurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: DS.border,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: DS.border,
   },
   restoreBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: DS.bgSurface2,
+    borderRadius: 20,
   },
   restoreText: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 13, fontWeight: '600',
     color: DS.textSecondary,
-    textDecorationLine: 'underline',
-    textDecorationStyle: 'dotted',
   },
 
   // Hero
-  heroSection: {
-    alignItems: 'center',
-    paddingTop: 4,
-    paddingBottom: 16,
-  },
-  logoContainer: {
-    marginBottom: 12,
-    position: 'relative',
-  },
+  heroSection: { alignItems: 'center', paddingTop: 2, paddingBottom: 14 },
+  logoContainer: { marginBottom: 10, position: 'relative' },
   logoGlow: {
-    position: 'absolute',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: DS.brandNavy + '15',
-    top: -4,
-    left: -4,
+    position: 'absolute', width: 64, height: 64, borderRadius: 32,
+    backgroundColor: DS.brandNavy + '12', top: -4, left: -4,
   },
   logoBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    width: 56, height: 56, borderRadius: 18,
     backgroundColor: DS.brandNavy,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
-      ios: {
-        shadowColor: DS.brandNavy,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 16,
-      },
+      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16 },
       android: { elevation: 8 },
     }),
   },
   heroTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: DS.textPrimary,
-    letterSpacing: -0.5,
-    marginBottom: 4,
+    fontSize: 26, fontWeight: '800',
+    color: DS.textPrimary, letterSpacing: -0.5, marginBottom: 3,
   },
   heroSubtitle: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: DS.textSecondary,
+    fontSize: 14, fontWeight: '400', color: DS.textSecondary,
+  },
+  currentPlanChip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: DS.positive + '10',
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 20, gap: 5, marginTop: 8,
+  },
+  currentPlanChipText: {
+    fontSize: 12, fontWeight: '600', color: DS.positive,
   },
 
   // Tabs
-  tabContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
+  tabContainer: { paddingHorizontal: 20, marginBottom: 14 },
   tabTrack: {
     flexDirection: 'row',
     backgroundColor: DS.bgSurface2,
-    borderRadius: 14,
-    padding: 3,
-    position: 'relative',
+    borderRadius: 14, padding: 3, position: 'relative',
   },
   tabIndicator: {
-    position: 'absolute',
-    top: 3,
-    left: 3,
-    height: '100%',
-    backgroundColor: DS.brandNavy,
-    borderRadius: 12,
+    position: 'absolute', top: 3, left: 3,
+    height: '100%', borderRadius: 12,
     ...Platform.select({
-      ios: {
-        shadowColor: DS.brandNavy,
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
-      },
+      ios: { shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
       android: { elevation: 4 },
     }),
   },
   tabOption: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 11,
-    flexDirection: 'row',
-    zIndex: 1,
-    gap: 4,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 11, flexDirection: 'row', zIndex: 1, gap: 4,
   },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DS.textSecondary,
-  },
-  tabTextActive: {
-    color: DS.textInverse,
-  },
+  tabText: { fontSize: 13, fontWeight: '600', color: DS.textSecondary },
+  tabTextActive: { color: DS.textInverse },
   tabStar: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 14, height: 14, borderRadius: 7,
     backgroundColor: DS.accentGoldSub,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
 
   // Content
-  contentArea: {
-    flex: 1,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 2,
-  },
+  contentArea: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 2 },
 
   // Price Card
   priceCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    marginBottom: 14,
+    backgroundColor: DS.bgSurface, borderRadius: 22,
+    borderWidth: 1.5, overflow: 'hidden', marginBottom: 14,
     ...Platform.select({
-      ios: {
-        shadowColor: DS.brandNavy,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 20,
-      },
+      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 20 },
       android: { elevation: 3 },
     }),
   },
-  priceCardAccent: {
-    height: 4,
-    width: '100%',
-  },
-  priceCardInner: {
-    padding: 22,
-  },
+  priceCardAccent: { height: 4, width: '100%' },
+  priceCardInner: { padding: 22 },
   planNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: 3,
   },
-  planName: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
+  planName: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
   planPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 4,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20, gap: 4,
   },
-  planPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  planPillText: { fontSize: 12, fontWeight: '700' },
   planTagline: {
-    fontSize: 13,
-    fontWeight: '400',
-    color: DS.textSecondary,
-    marginBottom: 18,
+    fontSize: 13, fontWeight: '400',
+    color: DS.textSecondary, marginBottom: 16,
   },
   priceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
   },
   priceAmount: {
-    fontSize: 48,
-    fontWeight: '800',
-    letterSpacing: -2,
-    lineHeight: 50,
+    fontSize: 46, fontWeight: '800', letterSpacing: -2, lineHeight: 48,
   },
-  pricePerioCol: {
-    marginBottom: 6,
-  },
+  pricePerioCol: { marginBottom: 6 },
   pricePeriod: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: DS.textMuted,
-    lineHeight: 16,
+    fontSize: 13, fontWeight: '500', color: DS.textSecondary, lineHeight: 16,
+  },
+  includeLine: {
+    fontSize: 12, fontWeight: '500',
+    color: DS.textSecondary, marginTop: 8,
   },
 
   // Benefits
   benefitsCard: {
-    backgroundColor: DS.bgSurface,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: DS.border,
+    backgroundColor: DS.bgSurface, borderRadius: 20,
+    padding: 20, borderWidth: 1, borderColor: DS.border,
   },
   benefitsLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: DS.textMuted,
-    letterSpacing: 1.2,
-    marginBottom: 14,
+    fontSize: 11, fontWeight: '700',
+    color: DS.textMuted, letterSpacing: 1.2, marginBottom: 10,
   },
   benefitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 12,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 9, gap: 12,
   },
   benefitIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
   },
   benefitText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500',
-    color: DS.textPrimary,
+    flex: 1, fontSize: 14, fontWeight: '500', color: DS.textPrimary,
   },
-  newBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
+  checkCircle: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
   },
-  newBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.8,
+
+  // Premium Extras
+  extrasDivider: {
+    flexDirection: 'row', alignItems: 'center',
+    marginVertical: 12, gap: 10,
+  },
+  extrasDividerLine: {
+    flex: 1, height: 1, backgroundColor: DS.border,
+  },
+  extrasLabel: {
+    fontSize: 10, fontWeight: '800', letterSpacing: 1,
+  },
+  extraBadge: {
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
+  },
+  extraBadgeText: {
+    fontSize: 9, fontWeight: '800', letterSpacing: 0.6,
   },
 
   // Top-up
   topupIntro: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: DS.textSecondary,
-    lineHeight: 22,
-    marginBottom: 18,
+    fontSize: 15, fontWeight: '400',
+    color: DS.textSecondary, lineHeight: 22, marginBottom: 18,
   },
-  topupIntroHighlight: {
-    fontWeight: '600',
-    color: DS.textPrimary,
-  },
+  topupIntroHighlight: { fontWeight: '600', color: DS.textPrimary },
   topupCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: DS.bgSurface,
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 10,
-    borderWidth: 1.5,
-    borderColor: DS.border,
-    gap: 14,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: DS.bgSurface, borderRadius: 18,
+    padding: 18, marginBottom: 10,
+    borderWidth: 1.5, borderColor: DS.border, gap: 14,
   },
   topupCardSelected: {
     borderColor: DS.brandNavy,
-    backgroundColor: DS.bgSurface,
     ...Platform.select({
-      ios: {
-        shadowColor: DS.brandNavy,
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-      },
+      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 12 },
       android: { elevation: 3 },
     }),
   },
   radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: DS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 2, borderColor: DS.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  radioSelected: {
-    borderWidth: 2,
-    borderColor: DS.brandNavy,
-  },
-  radioDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: DS.brandNavy,
-  },
-  topupInfo: {
-    flex: 1,
-  },
-  topupTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
-  },
-  topupCredits: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DS.textPrimary,
-  },
-  topupCreditsLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: DS.textSecondary,
-  },
+  radioSelected: { borderWidth: 2, borderColor: DS.brandNavy },
+  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: DS.brandNavy },
+  topupInfo: { flex: 1 },
+  topupTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  topupCredits: { fontSize: 18, fontWeight: '700', color: DS.textPrimary },
+  topupCreditsLabel: { fontSize: 14, fontWeight: '500', color: DS.textSecondary },
   topupBadge: {
     backgroundColor: DS.accentGoldSub,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
-  topupBadgeText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: DS.accentGold,
-    letterSpacing: 0.5,
-  },
-  topupPerCredit: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: DS.textMuted,
-  },
-  topupPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DS.textSecondary,
-  },
-  topupPriceSelected: {
-    color: DS.brandNavy,
-  },
+  topupBadgeText: { fontSize: 8, fontWeight: '800', color: DS.accentGold, letterSpacing: 0.5 },
+  topupPerCredit: { fontSize: 12, fontWeight: '400', color: DS.textSecondary },
+  topupPrice: { fontSize: 18, fontWeight: '700', color: DS.textSecondary },
+  topupPriceSelected: { color: DS.brandNavy },
 
-  // Bottom fixed area
+  // Bottom
   bottomArea: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingHorizontal: 20, paddingTop: 10,
     paddingBottom: Platform.OS === 'ios' ? 8 : 20,
     backgroundColor: DS.bgPage,
-    borderTopWidth: 1,
-    borderTopColor: DS.border + '80',
+    borderTopWidth: 1, borderTopColor: DS.border + '60',
   },
   subscribeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    borderRadius: 28,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    height: 56, borderRadius: 28,
     ...Platform.select({
-      ios: {
-        shadowColor: DS.brandNavy,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 16,
-      },
+      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.2, shadowRadius: 16 },
       android: { elevation: 6 },
     }),
   },
-  subscribeBtnDisabled: {
-    opacity: 0.7,
+  subscribeBtnDisabled: { opacity: 0.7 },
+  subscribeBtnCurrent: {
+    borderWidth: 1.5, borderColor: DS.border,
+    ...Platform.select({ ios: { shadowOpacity: 0 }, android: { elevation: 0 } }),
   },
   subscribeBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: DS.textInverse,
-    letterSpacing: 0.2,
+    fontSize: 15, fontWeight: '700',
+    color: DS.textInverse, letterSpacing: 0.2,
   },
+  subscribeBtnTextCurrent: { color: DS.textSecondary },
   termsText: {
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '400',
-    color: DS.textMuted,
-    marginTop: 10,
+    textAlign: 'center', fontSize: 11, fontWeight: '400',
+    color: DS.textMuted, marginTop: 10,
   },
   termsLinks: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 4,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 6, marginTop: 4,
   },
   termLink: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: DS.textSecondary,
+    fontSize: 11, fontWeight: '500', color: DS.textSecondary,
     textDecorationLine: 'underline',
   },
-  termsDot: {
-    fontSize: 11,
-    color: DS.textMuted,
-  },
+  termsDot: { fontSize: 11, color: DS.textMuted },
 });
