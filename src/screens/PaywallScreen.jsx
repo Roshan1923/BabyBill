@@ -276,8 +276,9 @@ function findPackage(offering, packageId, productId) {
 }
 
 // ─── Main PaywallScreen ──────────────────────────────────────
-export default function PaywallScreen({ navigation }) {
-  const [activeTab, setActiveTab] = useState('premium');
+export default function PaywallScreen({ navigation, route }) {
+    const initialTab = route?.params?.initialTab || 'premium';
+    const [activeTab, setActiveTab] = useState(initialTab);
   const [selectedTopup, setSelectedTopup] = useState(1);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
