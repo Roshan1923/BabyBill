@@ -7,6 +7,7 @@ import {
   Text,
   Animated,
 } from 'react-native';
+import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { supabase } from './src/config/supabase';
@@ -47,10 +48,28 @@ const App = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
+
+      // Configure RevenueCat when user is logged in
+      if (session?.user?.id) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+        Purchases.configure({
+          apiKey: 'appl_GiQmBRqwOePBykUbDJzEsrsrlEj',
+          appUserID: session.user.id,
+        });
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+
+      // Configure RevenueCat on auth state change (login/logout)
+      if (session?.user?.id) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+        Purchases.configure({
+          apiKey: 'appl_GiQmBRqwOePBykUbDJzEsrsrlEj',
+          appUserID: session.user.id,
+        });
+      }
 
       if (session && justRegistered.current) {
         justRegistered.current = false;
