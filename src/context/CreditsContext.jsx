@@ -4,10 +4,8 @@ import { API_URL } from '../config/api';
 
 const CreditsContext = createContext();
 
-useEffect(() => {
-    fetchCredits();
-  }, [fetchCredits]);
-  
+
+
 export function CreditsProvider({ children }) {
   const [credits, setCredits] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +37,9 @@ export function CreditsProvider({ children }) {
       setLoading(false);
     }
   }, []);
+  useEffect(() => {
+    fetchCredits();
+  }, [fetchCredits]);
 
   // Update credits from a scan/process response (avoids extra API call)
   const updateCreditsFromResponse = useCallback((responseCredits) => {
