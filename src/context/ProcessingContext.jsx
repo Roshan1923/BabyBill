@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { supabase } from '../config/supabase';
 import { API_URL } from '../config/api';
 import { useNotifications } from './NotificationContext';
+import { useCredits } from './CreditsContext';
 
 const ProcessingContext = createContext();
 
@@ -16,9 +17,9 @@ const STATUS = {
 
 export function ProcessingProvider({ children }) {
   const [jobs, setJobs] = useState([]);
-  const [credits, setCredits] = useState(null);
   const jobsRef = useRef([]);
   const { addNotification } = useNotifications();
+  const { updateCreditsFromResponse } = useCredits();
 
   // Keep ref in sync for use inside async callbacks
   const updateJobs = useCallback((updater) => {
@@ -41,31 +42,6 @@ export function ProcessingProvider({ children }) {
     return jobsRef.current.filter(
       (j) => j.status !== STATUS.REVIEWED
     ).length;
-  }, []);
-
-  // Fetch credit balance from backend
-  const fetchCredits = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return null;
-
-      const response = await fetch(`${API_URL}/credits/balance`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (response.ok) {
-        const balance = await response.json();
-        setCredits(balance);
-        return balance;
-      }
-      return null;
-    } catch (error) {
-      console.log('Failed to fetch credits:', error.message);
-      return null;
-    }
   }, []);
 
   // Helper: get session token or throw
@@ -104,7 +80,7 @@ export function ProcessingProvider({ children }) {
     newJobs.forEach((job) => {
       processOne(job);
     });
-  }, [updateJobs]);
+  }, [updateJobs, processOne]);
 
   // Process a single receipt
   const processOne = useCallback(async (job) => {
@@ -131,7 +107,6 @@ export function ProcessingProvider({ children }) {
         method: 'POST',
         body: formData,
         headers: {
-          'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${token}`,
         },
       });
@@ -140,18 +115,18 @@ export function ProcessingProvider({ children }) {
 
       // Update credits from response if available
       if (result.credits) {
-        setCredits((prev) => ({ ...prev, ...result.credits }));
+        updateCreditsFromResponse(result.credits);
       }
 
       // Credit limit reached
-      if (response.status === 403 && result.error === 'LIMIT_REACHED') {
+      if (response.status === 403 && (result.error === 'LIMIT_REACHED' || result.error === 'CREDIT_CHECK_FAILED')) {
         updateJobs((prev) =>
           prev.map((j) =>
             j.id === job.id
               ? {
                   ...j,
                   status: STATUS.FAILED,
-                  error: `You've used all ${result.credits_limit} scans this month. Resets ${new Date(result.period_end).toLocaleDateString()}.`,
+                  error: 'You\'ve used all your scan credits. Upgrade or buy a top-up to keep scanning.',
                   isLimitReached: true,
                 }
               : j
@@ -160,7 +135,7 @@ export function ProcessingProvider({ children }) {
         addNotification({
           type: 'limit_reached',
           title: 'Scan Limit Reached',
-          message: `You've used all ${result.credits_limit} free scans this month.`,
+          message: 'You\'ve used all your scan credits.',
           data: { jobId: job.id },
         });
         return;
@@ -248,7 +223,7 @@ export function ProcessingProvider({ children }) {
         )
       );
     }
-  }, [updateJobs]);
+  }, [updateJobs, updateCreditsFromResponse, addNotification]);
 
   // Update a single job's status
   const updateJobStatus = useCallback((jobId, status) => {
@@ -349,7 +324,6 @@ export function ProcessingProvider({ children }) {
     <ProcessingContext.Provider
       value={{
         jobs,
-        credits,
         getReviewItems,
         getPendingCount,
         processBatch,
@@ -358,7 +332,6 @@ export function ProcessingProvider({ children }) {
         markReviewed,
         removeJob,
         clearReviewed,
-        fetchCredits,
         STATUS,
       }}
     >
