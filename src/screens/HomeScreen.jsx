@@ -24,6 +24,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
 import { launchImageLibrary } from "react-native-image-picker";
 import { useProcessing } from "../context/ProcessingContext";
+import { useCredits } from "../context/CreditsContext";
 import { useNotifications } from "../context/NotificationContext";
 import {
   requestPermissionWithBlockedHandling,
@@ -39,8 +40,8 @@ const DS = {
   bgPage: "#FAF8F4", bgSurface: "#FFFEFB", bgSurface2: "#F5F2EC",
   brandNavy: "#1A3A6B", brandBlue: "#2563C8", accentGold: "#E8A020",
   accentGoldSub: "#FEF3DC", textPrimary: "#1C1610", textSecondary: "#8A7E72",
-  textInverse: "#FFFEFB", positive: "#2A8C5C", negative: "#C8402A",
-  border: "#EDE8E0", shadow: "rgba(26,58,107,0.10)",
+  textMuted: "#B8B0A4", textInverse: "#FFFEFB", positive: "#2A8C5C",
+  negative: "#C8402A", border: "#EDE8E0", shadow: "rgba(26,58,107,0.10)",
   pagePad: 20, cardPad: 20, cardRadius: 20, buttonHeight: 52,
   iconBox: 40, iconRadius: 12, avatar: 42, navFab: 56, fabPlus: 52, navHeight: 80,
 };
@@ -49,7 +50,7 @@ const CARD_WIDTH = SCREEN_WIDTH * 0.78;
 const CARD_HEIGHT = 230;
 const CARD_GAP = 14;
 const RECENT_RECEIPT_LIMIT = 4;
-const TOPUP_OPTIONS = [0, 25, 50, 75, 100];
+const TOPUP_OPTIONS = [0, 25, 50, 100];
 
 // ─── Category Helpers ────────────────────────────────────────
 const FALLBACK_ICON = "receipt-outline";
@@ -178,6 +179,17 @@ function CreditPill({ credits, onBuyNow, onViewPlans }) {
   const empty = remaining === 0;
   const pillBg = empty ? "#E53935" : low ? DS.accentGold : DS.brandNavy;
 
+  // Plan-specific bar calculations
+  const planRemaining = credits?.is_active ? (credits?.sub_remaining || 0) : (credits?.free_remaining || 0);
+  const planLimit = credits?.is_active ? (credits?.sub_limit || 0) : 10;
+  const planBarPercent = planLimit > 0 ? Math.min((planRemaining / planLimit) * 100, 100) : 0;
+  const topupCredits = credits?.topup_remaining || 0;
+  const planLabel = credits?.is_active ? (credits?.tier === 'premium' ? 'Premium' : 'Essential') : 'Free';
+
+  const planBarColor = planRemaining === 0 ? "#E53935"
+    : (planLimit > 0 && planRemaining / planLimit <= 0.2) ? DS.accentGold
+    : DS.brandNavy;
+
   useEffect(() => {
     if (open) {
       Animated.parallel([
@@ -211,21 +223,17 @@ function CreditPill({ credits, onBuyNow, onViewPlans }) {
     onViewPlans && onViewPlans();
   };
 
-  const popupWidth = 248;
+  const popupWidth = 260;
   const popupLeft = Math.min(
     pillLayout.x + pillLayout.width - popupWidth,
     SCREEN_WIDTH - popupWidth - 16
   );
   const popupTop = pillLayout.y + pillLayout.height + 10;
 
-  // Caret x position relative to popup
   const caretRight = Math.max(
     8,
     popupLeft + popupWidth - (pillLayout.x + pillLayout.width / 2) - 6
   );
-
-  const barPercent = total > 0 ? (remaining / total) * 100 : 0;
-  const barColor = empty ? "#E53935" : low ? DS.accentGold : DS.brandNavy;
 
   return (
     <>
@@ -254,6 +262,7 @@ function CreditPill({ credits, onBuyNow, onViewPlans }) {
           style={[
             styles.creditPopup,
             {
+              width: popupWidth,
               left: popupLeft,
               top: popupTop,
               opacity: fadeAnim,
@@ -282,10 +291,33 @@ function CreditPill({ credits, onBuyNow, onViewPlans }) {
             ) : null}
           </View>
 
-          {/* Usage bar */}
-          <View style={styles.creditBarTrack}>
-            <View style={[styles.creditBarFill, { width: `${barPercent}%`, backgroundColor: barColor }]} />
+          {/* Plan credits bar */}
+          <View style={styles.creditBarLabelRow}>
+            <Text style={styles.creditBarLabel}>{planLabel}</Text>
+            <Text style={styles.creditBarCount}>
+              <Text style={[styles.creditBarCountNum, { color: planBarColor }]}>{planRemaining}</Text>
+              <Text style={styles.creditBarCountOf}> / {planLimit}</Text>
+            </Text>
           </View>
+          <View style={styles.creditBarTrack}>
+            <View style={[styles.creditBarFill, { width: `${planBarPercent}%`, backgroundColor: planBarColor }]} />
+          </View>
+
+          {/* Top-up bar */}
+          {topupCredits > 0 && (
+            <View style={{ marginTop: 8 }}>
+              <View style={styles.creditBarLabelRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Ionicons name="add-circle" size={10} color={DS.brandBlue} />
+                  <Text style={[styles.creditBarLabel, { color: DS.brandBlue }]}>Top-up</Text>
+                </View>
+                <Text style={[styles.creditBarCountNum, { color: DS.brandBlue, fontSize: 11 }]}>{topupCredits}</Text>
+              </View>
+              <View style={styles.creditBarTrack}>
+                <View style={[styles.creditBarFill, { width: '100%', backgroundColor: DS.brandBlue }]} />
+              </View>
+            </View>
+          )}
 
           <View style={styles.creditDivider} />
 
@@ -332,7 +364,7 @@ function CreditPill({ credits, onBuyNow, onViewPlans }) {
           {/* View Plans */}
           <TouchableOpacity onPress={handleViewPlans} activeOpacity={0.7} style={styles.creditPlansLink}>
             <Text style={styles.creditPlansLinkText}>View subscription plans</Text>
-            <Ionicons name="chevron-forward" size={11} color={DS.brandNavy} />
+            <Ionicons name="chevron-forward" size={13} color={DS.brandNavy} />
           </TouchableOpacity>
         </Animated.View>
       </Modal>
@@ -368,19 +400,14 @@ function HeaderRow({ userName = "User", navigation, credits }) {
         </View>
       </View>
 
-      {/* Right side: CreditPill + Bell */}
       <View style={styles.headerRight}>
         <CreditPill
           credits={credits}
           onBuyNow={(amount) => {
-            // TODO: wire to RevenueCat top-up purchase flow
-            // navigation.navigate('Paywall', { topup: amount })
-            Alert.alert("Top Up", `Purchase +${amount} credits — RevenueCat flow coming soon.`);
+            navigation.navigate('Paywall', { initialTab: 'topup' });
           }}
           onViewPlans={() => {
-            // TODO: navigate to Paywall screen
-            // navigation.navigate('Paywall')
-            Alert.alert("Plans", "Subscription plans screen coming soon.");
+            navigation.navigate('Paywall', { initialTab: 'premium' });
           }}
         />
 
@@ -548,7 +575,7 @@ function LivePendingBar({ dbPendingCount = 0, navigation }) {
 
 // ─── Action Buttons ──────────────────────────────────────────
 
-function ActionButtons({ navigation }) {
+function ActionButtons({ navigation, totalRemaining }) {
   const { processBatch } = useProcessing();
   const uploadScale = useRef(new Animated.Value(1)).current;
   const manualScale = useRef(new Animated.Value(1)).current;
@@ -573,6 +600,41 @@ function ActionButtons({ navigation }) {
       if (response.didCancel || response.errorCode) return;
       const assets = response.assets;
       if (assets && assets.length > 0) {
+        if (totalRemaining === 0) {
+          Alert.alert(
+            'Out of Scan Credits',
+            "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
+            [
+              { text: 'View Plans', onPress: () => navigation.navigate('Paywall', { initialTab: 'premium' }) },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+
+        if (totalRemaining < assets.length) {
+          Alert.alert(
+            'Not Enough Credits',
+            `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but selected ${assets.length} photo${assets.length !== 1 ? 's' : ''}. Only the first ${totalRemaining} will be processed.`,
+            [
+              {
+                text: `Process ${totalRemaining}`,
+                onPress: () => {
+                  const batch = assets.slice(0, totalRemaining).map((asset, index) => ({
+                    id: `upload_${Date.now()}_${index}`,
+                    photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
+                  }));
+                  processBatch(batch);
+                  navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
+                },
+              },
+              { text: 'View Plans', onPress: () => navigation.navigate('Paywall', { initialTab: 'premium' }) },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          );
+          return;
+        }
+
         const batch = assets.map((asset, index) => ({
           id: `upload_${Date.now()}_${index}`,
           photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
@@ -696,7 +758,7 @@ export default function HomeScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
   const [credits, setCredits] = useState(null);
 
-  const { fetchCredits } = useProcessing();
+  const { fetchCredits } = useCredits();
 
   const loadCredits = useCallback(async () => {
     try {
@@ -783,7 +845,7 @@ export default function HomeScreen({ navigation }) {
 
             <DotIndicator count={2} activeIndex={activeCardIndex} />
             <LivePendingBar dbPendingCount={pendingCount} navigation={navigation} />
-            <ActionButtons navigation={navigation} />
+            <ActionButtons navigation={navigation} totalRemaining={getTotalCredits(credits).remaining} />
 
             <View style={styles.receiptsSection}>
               <View style={styles.receiptsHeader}>
@@ -869,7 +931,6 @@ const styles = StyleSheet.create({
   // Credit Popup
   creditPopup: {
     position: "absolute",
-    width: 248,
     backgroundColor: DS.bgSurface,
     borderRadius: 16,
     padding: 16,
@@ -892,10 +953,17 @@ const styles = StyleSheet.create({
   creditBadge: { backgroundColor: "#FFF8EC", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   creditBadgeText: { fontSize: 10, fontWeight: "600", color: DS.accentGold },
 
-  creditBarTrack: { height: 5, backgroundColor: "#EEF0F3", borderRadius: 10, overflow: "hidden", marginBottom: 14 },
+  // Credit bar labels
+  creditBarLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  creditBarLabel: { fontSize: 10, fontWeight: "600", color: DS.textSecondary },
+  creditBarCount: {},
+  creditBarCountNum: { fontSize: 11, fontWeight: "700" },
+  creditBarCountOf: { fontSize: 10, fontWeight: "400", color: DS.textMuted },
+
+  creditBarTrack: { height: 5, backgroundColor: "#EEF0F3", borderRadius: 10, overflow: "hidden", marginBottom: 2 },
   creditBarFill: { height: "100%", borderRadius: 10 },
 
-  creditDivider: { height: 1, backgroundColor: "#F0F0ED", marginBottom: 12 },
+  creditDivider: { height: 1, backgroundColor: "#F0F0ED", marginTop: 12, marginBottom: 12 },
 
   creditAddLabel: {
     fontSize: 10, fontWeight: "600", color: DS.textSecondary,
@@ -920,10 +988,12 @@ const styles = StyleSheet.create({
   creditBuyBtnDisabled: { backgroundColor: "#D0D4DA" },
   creditBuyBtnText: { color: "#FFFEFB", fontSize: 13, fontWeight: "600" },
 
-  creditPlansLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
+  creditPlansLink: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
+    paddingVertical: 4,
+  },
   creditPlansLinkText: {
-    fontSize: 11, fontWeight: "500", color: DS.brandNavy,
-    textDecorationLine: "underline", textDecorationStyle: "dotted",
+    fontSize: 13, fontWeight: "600", color: DS.brandNavy,
   },
 
   // Page
