@@ -12,6 +12,7 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  Alert
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -25,7 +26,7 @@ import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
+import { useCredits } from '../context/CreditsContext';
 // ─── Design System Tokens ────────────────────────────────────
 const DS = {
   bgPage:        '#FAF8F4',
@@ -55,6 +56,7 @@ const OVERLAY = {
 };
 
 export default function ScanScreen({ navigation }) {
+  const { totalRemaining, canScan } = useCredits();
   const device = useCameraDevice('back');
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef(null);
@@ -203,7 +205,7 @@ export default function ScanScreen({ navigation }) {
     }).start();
   };
 
-  // ─── Gallery — multi-select supported ──────────────────────
+  // ─── Gallery (fresh state only) ────────────────────────────
   const handleGallery = async () => {
     const granted = await requestPermissionWithBlockedHandling(
       'photoLibrary',
@@ -214,33 +216,17 @@ export default function ScanScreen({ navigation }) {
     if (!granted) return;
 
     launchImageLibrary(
-      { mediaType: 'photo', quality: 1, selectionLimit: 0 },
+      { mediaType: 'photo', quality: 1, maxWidth: 4000, maxHeight: 4000 },
       (response) => {
         if (response.didCancel) return;
         if (response.errorCode) {
           showError('Gallery Error', response.errorMessage || 'Failed to pick image.');
           return;
         }
-        const assets = response.assets;
-        if (!assets || assets.length === 0) return;
-
-        if (assets.length === 1) {
-          // Single photo — show preview overlay for keep/retake
-          const uri = assets[0].uri;
+        if (response.assets && response.assets[0]) {
+          const uri = response.assets[0].uri;
           const path = uri.replace('file://', '');
-          setPreviewPhoto(path);
-        } else {
-          // Multiple photos — skip preview, send all directly to processing
-          const batch = assets.map((asset, index) => ({
-            id: `gallery_${Date.now()}_${index}`,
-            photoPath: asset.uri.startsWith('file://')
-              ? asset.uri.replace('file://', '')
-              : asset.uri,
-          }));
-
-          setCommittedScans(batch);
-          setShowCommit(true);
-          processBatch(batch);
+          setPreviewPhoto(path); // Show as overlay, not navigation
         }
       }
     );
@@ -263,13 +249,44 @@ export default function ScanScreen({ navigation }) {
 
   // ─── Done — show completion sheet & start processing ────────
   const handleDone = () => {
-    const batch = [...scans]; // Snapshot before clearing
+    if (totalRemaining === 0) {
+      Alert.alert(
+        'Out of Scan Credits',
+        "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
+        [
+          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    if (totalRemaining < scans.length) {
+      Alert.alert(
+        'Not Enough Credits',
+        `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but ${scans.length} receipt${scans.length !== 1 ? 's' : ''} to process. Only the first ${totalRemaining} will be processed.`,
+        [
+          {
+            text: `Process ${totalRemaining}`,
+            onPress: () => {
+              const batch = scans.slice(0, totalRemaining);
+              setCommittedScans(batch);
+              setShowCommit(true);
+              processBatch(batch);
+            },
+          },
+          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    const batch = [...scans];
     setCommittedScans(batch);
     setShowCommit(true);
-
-    // Start background processing immediately
     processBatch(batch);
-  };
+};
 
   const handleViewProgress = () => {
     setShowCommit(false);
@@ -403,7 +420,7 @@ export default function ScanScreen({ navigation }) {
             {/* Done button — only in accumulation state */}
             {hasScans && (
               <TouchableOpacity style={styles.doneBtn} onPress={handleDone} activeOpacity={0.7}>
-                <Ionicons name="checkmark" size={22} color="#fff" />
+                <Ionicons name="checkmark" size={20} color={DS.accentGold} />
               </TouchableOpacity>
             )}
           </View>
@@ -519,7 +536,6 @@ export default function ScanScreen({ navigation }) {
 
       {/* ══════════════════════════════════════════════════════
           SCAN COMPLETE SHEET — bottom sheet after tapping Done
-          or after multi-gallery upload
          ══════════════════════════════════════════════════════ */}
       {showCommit && (
         <ScanCompleteSheet
@@ -683,8 +699,8 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: OVERLAY.btnBg, justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: OVERLAY.btnBg,
+    backgroundColor: 'rgba(232, 160, 32, 0.18)', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(232, 160, 32, 0.35)',
   },
 
   // ─── Bottom Controls ─────────────────────────────────────
