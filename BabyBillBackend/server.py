@@ -1065,7 +1065,7 @@ def gmail_connect():
                 "code": server_auth_code,
                 "client_id": GOOGLE_CLIENT_ID,
                 "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": "postmessage",  # required for server-side flow from mobile
+                "redirect_uri": "",  # empty string for mobile serverAuthCode flow
                 "grant_type": "authorization_code",
             },
             timeout=HTTP_TIMEOUT,
