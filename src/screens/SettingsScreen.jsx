@@ -131,6 +131,7 @@ export default function SettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
 
   const { credits, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
 
@@ -156,6 +157,14 @@ export default function SettingsScreen({ navigation }) {
             } else {
               setAvatarUrl(null);
             }
+
+            // Check Gmail connection status
+            const { data: gmailData } = await supabase
+              .from("gmail_connections")
+              .select("id")
+              .eq("user_id", authUser.id)
+              .maybeSingle();
+            setGmailConnected(!!gmailData);
           }
         } catch (e) {
           console.error("Error fetching user:", e);
@@ -203,7 +212,6 @@ export default function SettingsScreen({ navigation }) {
     : (planLimit > 0 && planRemaining / planLimit <= 0.2) ? DS.accentGold
     : accentColor;
 
-  // Navigate to paywall with specific tab
   const navigatePaywall = (tab) => {
     navigation.navigate('Paywall', { initialTab: tab });
   };
@@ -223,7 +231,6 @@ export default function SettingsScreen({ navigation }) {
           <>
             {/* ── Profile + Plan Card ── */}
             <View style={styles.profileCard}>
-              {/* Profile row */}
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => navigation.navigate("ProfileEdit", { user, profile })}
@@ -247,7 +254,6 @@ export default function SettingsScreen({ navigation }) {
 
               {/* Plan + Credits section */}
               <View style={styles.planSection}>
-                {/* Plan badge + total credits */}
                 <View style={styles.planTopRow}>
                   <View style={styles.planNameWrap}>
                     <Ionicons
@@ -268,9 +274,7 @@ export default function SettingsScreen({ navigation }) {
                   </Text>
                 </View>
 
-                {/* ── Dual credit bars ── */}
                 <View style={styles.barsContainer}>
-                  {/* Plan credits bar */}
                   <View style={styles.barRow}>
                     <View style={styles.barLabelRow}>
                       <Text style={styles.barLabel}>{isFree ? 'Free' : tierName}</Text>
@@ -284,7 +288,6 @@ export default function SettingsScreen({ navigation }) {
                     </View>
                   </View>
 
-                  {/* Top-up credits bar — only show if user has any */}
                   {topupCredits > 0 && (
                     <View style={styles.barRow}>
                       <View style={styles.barLabelRow}>
@@ -304,42 +307,25 @@ export default function SettingsScreen({ navigation }) {
                   )}
                 </View>
 
-                {/* Action buttons */}
                 <View style={styles.planActions}>
                   {isFree ? (
                     <>
-                      <TouchableOpacity
-                        style={styles.upgradeBtn}
-                        onPress={() => navigatePaywall('premium')}
-                        activeOpacity={0.85}
-                      >
+                      <TouchableOpacity style={styles.upgradeBtn} onPress={() => navigatePaywall('premium')} activeOpacity={0.85}>
                         <Ionicons name="flash" size={14} color={DS.textInverse} />
                         <Text style={styles.upgradeBtnText}>Upgrade Plan</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.buyCreditsBtn}
-                        onPress={() => navigatePaywall('topup')}
-                        activeOpacity={0.8}
-                      >
+                      <TouchableOpacity style={styles.buyCreditsBtn} onPress={() => navigatePaywall('topup')} activeOpacity={0.8}>
                         <Ionicons name="add-circle-outline" size={14} color={DS.brandNavy} />
                         <Text style={styles.buyCreditsBtnText}>Buy Credits</Text>
                       </TouchableOpacity>
                     </>
                   ) : (
                     <>
-                      <TouchableOpacity
-                        style={styles.changePlanBtn}
-                        onPress={() => navigatePaywall(isPremium ? 'premium' : 'essential')}
-                        activeOpacity={0.85}
-                      >
+                      <TouchableOpacity style={styles.changePlanBtn} onPress={() => navigatePaywall(isPremium ? 'premium' : 'essential')} activeOpacity={0.85}>
                         <Ionicons name="swap-horizontal" size={14} color={DS.textInverse} />
                         <Text style={styles.changePlanBtnText}>View Plans</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.buyCreditsBtn}
-                        onPress={() => navigatePaywall('topup')}
-                        activeOpacity={0.8}
-                      >
+                      <TouchableOpacity style={styles.buyCreditsBtn} onPress={() => navigatePaywall('topup')} activeOpacity={0.8}>
                         <Ionicons name="add-circle-outline" size={14} color={DS.brandNavy} />
                         <Text style={styles.buyCreditsBtnText}>Buy Credits</Text>
                       </TouchableOpacity>
@@ -347,7 +333,6 @@ export default function SettingsScreen({ navigation }) {
                   )}
                 </View>
 
-                {/* Manage billing — subscribers only */}
                 {isSubscribed && (
                   <TouchableOpacity
                     style={styles.manageBillingRow}
@@ -362,7 +347,7 @@ export default function SettingsScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Preferences */}
+            {/* ── Preferences ── */}
             <Text style={styles.sectionLabel}>PREFERENCES</Text>
             <View style={styles.sectionCard}>
               <SettingsRow icon="notifications-outline" iconLib="ionicons" iconColor="#2563C8"
@@ -379,7 +364,48 @@ export default function SettingsScreen({ navigation }) {
                 onPress={() => navigation.navigate("Categories")} isLast />
             </View>
 
-            {/* Support */}
+            {/* ── Integrations ── */}
+            <Text style={styles.sectionLabel}>INTEGRATIONS</Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => navigation.navigate("GmailReceipts")}
+              style={styles.gmailCard}
+            >
+
+
+              <View style={styles.gmailCardInner}>
+                {/* Left: icon + text */}
+                <View style={styles.gmailCardLeft}>
+                  {/* Mail icon */}
+                  <View style={styles.gmailIconWrap}>
+                    <Ionicons name="mail" size={22} color={DS.accentGold} />
+                  </View>
+                  <View style={styles.gmailTextBlock}>
+                    <View style={styles.gmailLabelRow}>
+                      <Text style={styles.gmailLabel}>Connect Gmail</Text>
+                      {gmailConnected && (
+                        <View style={styles.gmailConnectedBadge}>
+                          <View style={styles.gmailConnectedDot} />
+                          <Text style={styles.gmailConnectedText}>Connected</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.gmailSublabel}>
+                      {gmailConnected
+                        ? "Auto-detecting receipts from your inbox"
+                        : "Automatically find receipts in your inbox"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Right: arrow */}
+                <View style={styles.gmailArrowWrap}>
+                  <Icon name="chevron-right" size={16} color={DS.brandNavy} />
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {/* ── Support ── */}
             <Text style={styles.sectionLabel}>SUPPORT</Text>
             <View style={styles.sectionCard}>
               <SettingsRow icon="help-circle" iconLib="feather" iconColor="#E8A020"
@@ -432,7 +458,6 @@ const styles = StyleSheet.create({
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
   pageTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3, marginBottom: 20, color: DS.textPrimary },
 
-  // Profile + Plan unified card
   profileCard: {
     borderRadius: SIZING.cardRadius, borderWidth: 1, marginBottom: 24,
     backgroundColor: DS.bgSurface, borderColor: DS.border,
@@ -445,23 +470,18 @@ const styles = StyleSheet.create({
   profileInfo: { flex: 1, marginLeft: 16 },
   profileName: { fontSize: 18, fontWeight: "700", color: DS.textPrimary },
   profileEmail: { fontSize: 13, fontWeight: "400", marginTop: 3, color: DS.textSecondary },
-
   profileDivider: { height: 1, backgroundColor: DS.border, marginHorizontal: SIZING.cardPad },
 
-  // Plan section
   planSection: { padding: SIZING.cardPad, paddingTop: 14, paddingBottom: 18 },
-
   planTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   planNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   planName: { fontSize: 15, fontWeight: '700' },
   planPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
   planPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-
   totalCredits: { flexDirection: 'row', alignItems: 'baseline' },
   totalCreditsNum: { fontSize: 18, fontWeight: '800', color: DS.textPrimary },
   totalCreditsLabel: { fontSize: 12, fontWeight: '400', color: DS.textMuted },
 
-  // Dual bars
   barsContainer: { gap: 10, marginBottom: 4 },
   barRow: {},
   barLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
@@ -470,41 +490,28 @@ const styles = StyleSheet.create({
   barCountNum: { fontSize: 12, fontWeight: '700' },
   barCountOf: { fontSize: 11, fontWeight: '400', color: DS.textMuted },
   topupLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-
   barTrack: { height: 5, backgroundColor: DS.bgSurface2, borderRadius: 3, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3 },
 
-  // Action buttons
   planActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
-
   upgradeBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20, backgroundColor: DS.accentGold,
-    ...Platform.select({
-      ios: { shadowColor: DS.accentGold, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
-      android: { elevation: 3 },
-    }),
+    ...Platform.select({ ios: { shadowColor: DS.accentGold, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 }, android: { elevation: 3 } }),
   },
   upgradeBtnText: { fontSize: 13, fontWeight: '700', color: DS.textInverse },
-
   changePlanBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20, backgroundColor: DS.brandNavy,
-    ...Platform.select({
-      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6 },
-      android: { elevation: 3 },
-    }),
+    ...Platform.select({ ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6 }, android: { elevation: 3 } }),
   },
   changePlanBtnText: { fontSize: 13, fontWeight: '700', color: DS.textInverse },
-
   buyCreditsBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20,
     backgroundColor: DS.bgSurface, borderWidth: 1.5, borderColor: DS.brandNavy,
   },
   buyCreditsBtnText: { fontSize: 13, fontWeight: '600', color: DS.brandNavy },
-
-  // Manage billing
   manageBillingRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, marginTop: 12, paddingTop: 12,
@@ -512,13 +519,57 @@ const styles = StyleSheet.create({
   },
   manageBillingText: { fontSize: 12, fontWeight: '500', color: DS.textSecondary },
 
-  // Sections
   sectionLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8, marginLeft: 4, color: DS.textSecondary },
   sectionCard: {
     borderRadius: SIZING.cardRadius, paddingHorizontal: 16, borderWidth: 1, marginBottom: 24,
     backgroundColor: DS.bgSurface, borderColor: DS.border,
     ...Platform.select({ ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 }, android: { elevation: 2 } }),
   },
+
+  // Gmail feature highlight card
+  gmailCard: {
+    borderRadius: SIZING.cardRadius, borderWidth: 1, marginBottom: 24,
+    backgroundColor: DS.bgSurface, borderColor: DS.border,
+    overflow: 'hidden', minHeight: 80,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 },
+      android: { elevation: 3 },
+    }),
+  },
+  gmailBlob1: {
+    position: 'absolute', width: 130, height: 130, borderRadius: 65,
+    backgroundColor: DS.accentGoldSub, top: -50, right: -30,
+  },
+  gmailBlob2: {
+    position: 'absolute', width: 70, height: 70, borderRadius: 35,
+    backgroundColor: DS.brandNavy + '08', bottom: -25, right: 80,
+  },
+  gmailCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 18, paddingHorizontal: 16, gap: 14,
+  },
+  gmailCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  gmailIconWrap: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: DS.accentGoldSub, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: DS.accentGold + '30',
+  },
+  gmailMText: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  gmailTextBlock: { flex: 1 },
+  gmailLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  gmailLabel: { fontSize: 15, fontWeight: '700', color: DS.textPrimary },
+  gmailConnectedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: DS.positive + '14', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20,
+  },
+  gmailConnectedDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: DS.positive },
+  gmailConnectedText: { fontSize: 10, fontWeight: '700', color: DS.positive },
+  gmailSublabel: { fontSize: 12, fontWeight: '400', color: DS.textSecondary, lineHeight: 16 },
+  gmailArrowWrap: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: DS.bgSurface2, alignItems: 'center', justifyContent: 'center',
+  },
+
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", height: 52, borderRadius: 999, borderWidth: 1, gap: 8, marginBottom: 16,
     backgroundColor: DS.bgSurface, borderColor: DS.negative + "30",

@@ -30,7 +30,7 @@ import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 import { NotificationProvider } from './src/context/NotificationContext';
 import CategoryScreen from './src/screens/CategoryScreen';
 import { CreditsProvider } from './src/context/CreditsContext';
-
+import GmailReceiptScreen from './src/screens/GmailReceiptScreen';
 
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -51,21 +51,18 @@ const App = () => {
       setSession(session);
       setLoading(false);
 
-      // Configure RevenueCat when user is logged in
       if (session?.user?.id) {
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
         Purchases.configure({
           apiKey: 'appl_GiQmBRqwOePBykUbDJzEsrsrlEj',
           appUserID: session.user.id,
         });
-      
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
 
-      // Configure RevenueCat on auth state change (login/logout)
       if (session?.user?.id) {
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
         Purchases.configure({
@@ -116,89 +113,92 @@ const App = () => {
         <NotificationProvider>
           <CreditsProvider>
             <ProcessingProvider>
-                <NavigationContainer>
-                  <Stack.Navigator screenOptions={{ headerShown: false }}>
-                    {session ? (
-                      <>
-                        <Stack.Screen name="Main" component={TabNavigator} />
-                        <Stack.Screen name="Detail" component={DetailScreen} />
-                      
-                        <Stack.Screen
-                          name="ManualEntry"
-                          component={ManualEntryScreen}
-                          options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+              <NavigationContainer>
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                  {session ? (
+                    <>
+                      <Stack.Screen name="Main" component={TabNavigator} />
+                      <Stack.Screen name="Detail" component={DetailScreen} />
+                      <Stack.Screen
+                        name="ManualEntry"
+                        component={ManualEntryScreen}
+                        options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
                         name="Settings"
                         component={SettingsScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen 
-                        name="ReviewReceipt" 
-                        component={ReviewReceiptScreen} 
-                        options={{ headerShown: false }} 
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
+                        name="ReviewReceipt"
+                        component={ReviewReceiptScreen}
+                        options={{ headerShown: false }}
+                      />
+                      <Stack.Screen
                         name="ScanGallery"
                         component={ScanGalleryScreen}
                         options={{ animation: 'slide_from_left' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
                         name="ProfileEdit"
                         component={ProfileEditScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
                         name="CurrencyRegion"
                         component={CurrencyScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
                         name="HelpSupport"
                         component={HelpSupportScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
                         name="ExportDocuments"
                         component={ExportScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
                         name="Categories"
                         component={CategoryScreen}
                         options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
+                      />
+                      <Stack.Screen
+                        name="GmailReceipts"
+                        component={GmailReceiptScreen}
+                        options={{ animation: 'slide_from_right' }}
+                      />
+                      <Stack.Screen
                         name="Paywall"
                         component={PaywallScreen}
                         options={{ animation: 'slide_from_bottom' }}
-                        />    
-                        <Stack.Screen name="Notifications" component={NotificationScreen} />
-                      </>
-                    ) : (
-                      <>
-                        <Stack.Screen
-                          name="Login"
-                          component={LoginScreen}
-                          options={{ animationTypeForReplace: 'pop' }}
-                        />
-                        <Stack.Screen name="Register">
-                          {(props) => (
-                            <RegisterScreen
-                              {...props}
-                              onRegistrationStart={handleRegistrationStart}
-                            />
-                          )}
-                        </Stack.Screen>
-                      </>
-                    )}
-                  </Stack.Navigator>
+                      />
+                      <Stack.Screen name="Notifications" component={NotificationScreen} />
+                    </>
+                  ) : (
+                    <>
+                      <Stack.Screen
+                        name="Login"
+                        component={LoginScreen}
+                        options={{ animationTypeForReplace: 'pop' }}
+                      />
+                      <Stack.Screen name="Register">
+                        {(props) => (
+                          <RegisterScreen
+                            {...props}
+                            onRegistrationStart={handleRegistrationStart}
+                          />
+                        )}
+                      </Stack.Screen>
+                    </>
+                  )}
+                </Stack.Navigator>
               </NavigationContainer>
             </ProcessingProvider>
           </CreditsProvider>
         </NotificationProvider>
       </ScanProvider>
-      {/* Simple toast message */}
       {showToast && (
         <Animated.View style={[styles.toast, { opacity: fadeAnim }]}>
           <Text style={styles.toastText}>✓ Account created successfully!</Text>
