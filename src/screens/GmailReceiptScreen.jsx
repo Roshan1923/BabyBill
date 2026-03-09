@@ -315,7 +315,10 @@ export default function GmailReceiptsScreen({ navigation }) {
       setConnecting(true);
       await GoogleSignin.hasPlayServices();
       await GoogleSignin.signOut(); // force fresh consent so user sees Gmail scope
+
       const userInfo = await GoogleSignin.signIn();
+      console.log('userInfo keys:', JSON.stringify(Object.keys(userInfo)));
+      console.log('serverAuthCode:', userInfo.data?.serverAuthCode || userInfo.serverAuthCode || 'NULL');
 
       const serverAuthCode = userInfo.data?.serverAuthCode || userInfo.serverAuthCode;
       if (!serverAuthCode) {
