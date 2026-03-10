@@ -20,7 +20,7 @@ import { useCredits } from '../context/CreditsContext';
 import CreditModal from '../components/CreditModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BillBrainLogo = require('../assets/billbrain.png');
+const BillBrainLogo = require('../assets/logo.png');
 
 // ─── Design Tokens ───────────────────────────────────────────
 const DS = {
