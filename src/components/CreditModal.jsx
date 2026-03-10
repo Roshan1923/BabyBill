@@ -24,15 +24,6 @@ const DS = {
   border: '#EDE8E0',
 };
 
-// ─── MODAL TYPES ─────────────────────────────────────────────
-// 'zero_credits'    — no credits left, nudge to paywall
-// 'partial_credits' — not enough for full batch, offer partial process
-// 'purchase_success'— subscription or top-up purchase succeeded
-// 'purchase_error'  — purchase failed
-// 'restore_success' — restore found purchases
-// 'restore_empty'   — restore found nothing
-// 'generic_error'   — general error
-
 const MODAL_CONFIG = {
   zero_credits: {
     icon: 'flash-off-outline',
@@ -46,7 +37,6 @@ const MODAL_CONFIG = {
     iconColor: DS.accentGold,
     iconBg: DS.accentGoldSub,
     title: 'Not Enough Credits',
-    // message is dynamic — set via props
   },
   purchase_success: {
     icon: 'checkmark-circle',
@@ -81,18 +71,6 @@ const MODAL_CONFIG = {
   },
 };
 
-/**
- * CreditModal — styled modal that replaces Alert.alert for all credit/purchase flows
- *
- * Props:
- *   visible      — boolean
- *   type         — one of the MODAL_CONFIG keys
- *   message      — optional override message
- *   title        — optional override title
- *   buttons      — array of { text, onPress, style? ('primary'|'secondary'|'destructive'|'gold') }
- *   onClose      — called when backdrop tapped or modal dismissed
- *   extraContent — optional React node rendered between message and buttons
- */
 export default function CreditModal({
   visible = false,
   type = 'generic_error',
@@ -112,15 +90,10 @@ export default function CreditModal({
       opacityAnim.setValue(0);
       Animated.parallel([
         Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 300,
-          friction: 20,
-          useNativeDriver: true,
+          toValue: 1, tension: 300, friction: 20, useNativeDriver: true,
         }),
         Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
+          toValue: 1, duration: 200, useNativeDriver: true,
         }),
       ]).start();
     }
@@ -145,7 +118,6 @@ export default function CreditModal({
     }
   };
 
-  // Default close button if no buttons provided
   const modalButtons = buttons.length > 0 ? buttons : [
     { text: 'OK', onPress: handleClose, style: 'primary' },
   ];
@@ -166,35 +138,28 @@ export default function CreditModal({
         <Animated.View
           style={[
             styles.card,
-            {
-              opacity: opacityAnim,
-              transform: [{ scale: scaleAnim }],
-            },
+            { opacity: opacityAnim, transform: [{ scale: scaleAnim }] },
           ]}
         >
-          {/* Prevent backdrop press from closing when tapping card */}
-          <TouchableOpacity activeOpacity={1}>
+          <TouchableOpacity activeOpacity={1} style={styles.cardInner}>
             {/* Icon */}
             <View style={[styles.iconCircle, { backgroundColor: config.iconBg }]}>
-              <Ionicons name={config.icon} size={28} color={config.iconColor} />
+              <Ionicons name={config.icon} size={26} color={config.iconColor} />
             </View>
 
             {/* Title */}
             <Text style={styles.title}>{title || config.title}</Text>
 
             {/* Message */}
-            {(message || config.message) && (
+            {(message || config.message) ? (
               <Text style={styles.message}>{message || config.message}</Text>
-            )}
+            ) : null}
 
-            {/* Extra content (e.g., credit count display) */}
-            {extraContent}
+            {/* Extra content */}
+            {extraContent ? extraContent : null}
 
             {/* Buttons */}
-            <View style={[
-              styles.buttonRow,
-              modalButtons.length === 1 && styles.buttonRowSingle,
-            ]}>
+            <View style={styles.buttonRow}>
               {modalButtons.map((btn, index) => {
                 const btnStyle = getButtonStyle(btn.style);
                 return (
@@ -206,23 +171,18 @@ export default function CreditModal({
                       { backgroundColor: btnStyle.bg },
                       btnStyle.border && styles.buttonBorder,
                     ]}
-                    onPress={() => {
-                      btn.onPress?.();
-                    }}
+                    onPress={() => btn.onPress?.()}
                     activeOpacity={0.8}
                   >
                     {btn.icon && (
                       <Ionicons
                         name={btn.icon}
-                        size={16}
+                        size={15}
                         color={btnStyle.text}
-                        style={{ marginRight: 6 }}
+                        style={{ marginRight: 5 }}
                       />
                     )}
-                    <Text style={[
-                      styles.buttonText,
-                      { color: btnStyle.text },
-                    ]}>
+                    <Text style={[styles.buttonText, { color: btnStyle.text }]}>
                       {btn.text}
                     </Text>
                   </TouchableOpacity>
@@ -236,24 +196,18 @@ export default function CreditModal({
   );
 }
 
-// ─── Convenience wrapper for credit-specific modals ──────────
-
-/**
- * Helper to build the "partial credits" extra content
- * showing a visual breakdown of credits vs photos
- */
 export function PartialCreditsInfo({ creditsLeft, photosCount }) {
   return (
     <View style={styles.partialInfo}>
       <View style={styles.partialRow}>
         <View style={styles.partialItem}>
-          <Ionicons name="flash" size={16} color={DS.accentGold} />
+          <Ionicons name="flash" size={15} color={DS.accentGold} />
           <Text style={styles.partialNum}>{creditsLeft}</Text>
-          <Text style={styles.partialLabel}>credit{creditsLeft !== 1 ? 's' : ''} left</Text>
+          <Text style={styles.partialLabel}>credit{creditsLeft !== 1 ? 's' : ''}</Text>
         </View>
         <View style={styles.partialDivider} />
         <View style={styles.partialItem}>
-          <Ionicons name="images-outline" size={16} color={DS.brandNavy} />
+          <Ionicons name="images-outline" size={15} color={DS.brandNavy} />
           <Text style={styles.partialNum}>{photosCount}</Text>
           <Text style={styles.partialLabel}>photo{photosCount !== 1 ? 's' : ''}</Text>
         </View>
@@ -265,124 +219,125 @@ export function PartialCreditsInfo({ creditsLeft, photosCount }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 36,
   },
   card: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 320,
     backgroundColor: DS.bgSurface,
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: DS.border,
     ...Platform.select({
       ios: {
-        shadowColor: 'rgba(26,58,107,0.2)',
-        shadowOffset: { width: 0, height: 12 },
+        shadowColor: 'rgba(26,58,107,0.18)',
+        shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 1,
-        shadowRadius: 32,
+        shadowRadius: 28,
       },
-      android: { elevation: 12 },
+      android: { elevation: 10 },
     }),
   },
+  cardInner: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    width: '100%',
+  },
   iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: DS.textPrimary,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   message: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '400',
     color: DS.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: 19,
+    marginBottom: 18,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     width: '100%',
   },
-  buttonRowSingle: {
-    justifyContent: 'center',
-  },
   button: {
-    height: 48,
-    borderRadius: 14,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
-    paddingHorizontal: 20
+    paddingHorizontal: 16,
   },
   buttonBorder: {
     borderWidth: 1.5,
     borderColor: DS.border,
   },
   buttonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
 
-  // Partial credits info
+  // Partial credits
   partialInfo: {
     width: '100%',
     backgroundColor: DS.bgSurface2,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 18,
   },
   partialRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 0,
   },
   partialItem: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
   },
   partialDivider: {
     width: 1,
-    height: 24,
+    height: 20,
     backgroundColor: DS.border,
-    marginHorizontal: 12,
+    marginHorizontal: 10,
   },
   partialNum: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: DS.textPrimary,
   },
   partialLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: DS.textSecondary,
   },
   partialHint: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: DS.accentGold,
     textAlign: 'center',
-    marginTop: 10,
+    marginTop: 8,
   },
 });
