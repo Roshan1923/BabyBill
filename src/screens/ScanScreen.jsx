@@ -12,7 +12,6 @@ import {
   Dimensions,
   Platform,
   StatusBar,
-  Alert
 } from 'react-native';
 import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -24,6 +23,7 @@ import { useScanQueue } from '../context/ScanContext';
 import { useProcessing } from '../context/ProcessingContext';
 import PreviewOverlay from '../components/PreviewOverlay';
 import ScanCompleteSheet from '../components/ScanCompleteSheet';
+import CreditModal, { PartialCreditsInfo } from '../components/CreditModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 import { useCredits } from '../context/CreditsContext';
@@ -89,6 +89,7 @@ export default function ScanScreen({ navigation }) {
   const captureScale = useRef(new Animated.Value(1)).current;
   const zoomIndicatorOpacity = useRef(new Animated.Value(0)).current;
   const badgePulse = useRef(new Animated.Value(1)).current;
+  const [creditModal, setCreditModal] = useState({ visible: false, type: 'zero_credits' });
 
   // Best format
   const format = useMemo(() => {
@@ -250,35 +251,17 @@ export default function ScanScreen({ navigation }) {
   // ─── Done — show completion sheet & start processing ────────
   const handleDone = () => {
     if (totalRemaining === 0) {
-      Alert.alert(
-        'Out of Scan Credits',
-        "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
-        [
-          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      setCreditModal({ visible: true, type: 'zero_credits' });
       return;
     }
 
     if (totalRemaining < scans.length) {
-      Alert.alert(
-        'Not Enough Credits',
-        `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but ${scans.length} receipt${scans.length !== 1 ? 's' : ''} to process. Only the first ${totalRemaining} will be processed.`,
-        [
-          {
-            text: `Process ${totalRemaining}`,
-            onPress: () => {
-              const batch = scans.slice(0, totalRemaining);
-              setCommittedScans(batch);
-              setShowCommit(true);
-              processBatch(batch);
-            },
-          },
-          { text: 'View Plans', onPress: () => navigation.navigate('Paywall') },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      setCreditModal({
+        visible: true,
+        type: 'partial_credits',
+        creditsLeft: totalRemaining,
+        photosCount: scans.length,
+      });
       return;
     }
 
@@ -286,8 +269,7 @@ export default function ScanScreen({ navigation }) {
     setCommittedScans(batch);
     setShowCommit(true);
     processBatch(batch);
-};
-
+  };
   const handleViewProgress = () => {
     setShowCommit(false);
     clearScans();
@@ -622,6 +604,37 @@ export default function ScanScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+    {/* ─── Credit Check Modal ─── */}
+    <CreditModal
+        visible={creditModal.visible}
+        type={creditModal.type}
+        onClose={() => setCreditModal({ visible: false, type: 'zero_credits' })}
+        extraContent={
+          creditModal.type === 'partial_credits' ? (
+            <PartialCreditsInfo
+              creditsLeft={creditModal.creditsLeft || 0}
+              photosCount={creditModal.photosCount || 0}
+            />
+          ) : null
+        }
+        buttons={
+          creditModal.type === 'zero_credits'
+            ? [
+                { text: 'View Plans', icon: 'flash', onPress: () => { setCreditModal({ visible: false }); navigation.navigate('Paywall', { initialTab: 'premium' }); }, style: 'gold' },
+                { text: 'Cancel', onPress: () => setCreditModal({ visible: false }), style: 'secondary' },
+              ]
+            : [
+                { text: `Process ${creditModal.creditsLeft || 0}`, onPress: () => {
+                    setCreditModal({ visible: false });
+                    const batch = scans.slice(0, creditModal.creditsLeft);
+                    setCommittedScans(batch);
+                    setShowCommit(true);
+                    processBatch(batch);
+                  }, style: 'primary' },
+                { text: 'View Plans', onPress: () => { setCreditModal({ visible: false }); navigation.navigate('Paywall', { initialTab: 'premium' }); }, style: 'gold' },
+              ]
+        }
+      />
     </View>
   );
 }

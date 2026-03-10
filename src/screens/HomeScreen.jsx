@@ -26,6 +26,7 @@ import { launchImageLibrary } from "react-native-image-picker";
 import { useProcessing } from "../context/ProcessingContext";
 import { useCredits } from "../context/CreditsContext";
 import { useNotifications } from "../context/NotificationContext";
+import CreditModal, { PartialCreditsInfo } from '../components/CreditModal';
 import {
   requestPermissionWithBlockedHandling,
   openAppSettings,
@@ -584,6 +585,9 @@ function ActionButtons({ navigation, totalRemaining }) {
   const pressIn = (s, o) => { Animated.parallel([Animated.spring(s, { toValue: 0.94, useNativeDriver: true, speed: 50 }), Animated.timing(o, { toValue: 0.75, duration: 80, useNativeDriver: true })]).start(); };
   const pressOut = (s, o) => { Animated.parallel([Animated.spring(s, { toValue: 1, useNativeDriver: true, speed: 35, bounciness: 8 }), Animated.timing(o, { toValue: 1, duration: 150, useNativeDriver: true })]).start(); };
 
+  const [creditModal, setCreditModal] = useState({ visible: false, type: 'zero_credits' });
+  const pendingAssetsRef = useRef(null);
+
   const handleUpload = async () => {
     const granted = await requestPermissionWithBlockedHandling(
       'photoLibrary',
@@ -601,37 +605,18 @@ function ActionButtons({ navigation, totalRemaining }) {
       const assets = response.assets;
       if (assets && assets.length > 0) {
         if (totalRemaining === 0) {
-          Alert.alert(
-            'Out of Scan Credits',
-            "You've used all your scan credits. Upgrade or buy a top-up to keep scanning.",
-            [
-              { text: 'View Plans', onPress: () => navigation.navigate('Paywall', { initialTab: 'premium' }) },
-              { text: 'Cancel', style: 'cancel' },
-            ]
-          );
+          setCreditModal({ visible: true, type: 'zero_credits' });
           return;
         }
 
         if (totalRemaining < assets.length) {
-          Alert.alert(
-            'Not Enough Credits',
-            `You have ${totalRemaining} credit${totalRemaining !== 1 ? 's' : ''} left but selected ${assets.length} photo${assets.length !== 1 ? 's' : ''}. Only the first ${totalRemaining} will be processed.`,
-            [
-              {
-                text: `Process ${totalRemaining}`,
-                onPress: () => {
-                  const batch = assets.slice(0, totalRemaining).map((asset, index) => ({
-                    id: `upload_${Date.now()}_${index}`,
-                    photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
-                  }));
-                  processBatch(batch);
-                  navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
-                },
-              },
-              { text: 'View Plans', onPress: () => navigation.navigate('Paywall', { initialTab: 'premium' }) },
-              { text: 'Cancel', style: 'cancel' },
-            ]
-          );
+          pendingAssetsRef.current = assets;
+          setCreditModal({
+            visible: true,
+            type: 'partial_credits',
+            creditsLeft: totalRemaining,
+            photosCount: assets.length,
+          });
           return;
         }
 
@@ -645,21 +630,66 @@ function ActionButtons({ navigation, totalRemaining }) {
     });
   };
 
+  const handlePartialProcess = () => {
+    setCreditModal({ visible: false, type: 'zero_credits' });
+    const assets = pendingAssetsRef.current;
+    if (!assets) return;
+    const batch = assets.slice(0, totalRemaining).map((asset, index) => ({
+      id: `upload_${Date.now()}_${index}`,
+      photoPath: asset.uri.startsWith("file://") ? asset.uri.replace("file://", "") : asset.uri,
+    }));
+    pendingAssetsRef.current = null;
+    processBatch(batch);
+    navigation.navigate('Main', { screen: 'Receipts', params: { tab: 'review' } });
+  };
+
+  const closeModal = () => {
+    setCreditModal({ visible: false, type: 'zero_credits' });
+    pendingAssetsRef.current = null;
+  };
+
   return (
-    <View style={styles.actionRow}>
-      <TouchableOpacity activeOpacity={1} onPressIn={() => pressIn(uploadScale, uploadOpacity)} onPressOut={() => pressOut(uploadScale, uploadOpacity)} onPress={handleUpload} style={{ flex: 1 }}>
-        <Animated.View style={[styles.actionBtn, { transform: [{ scale: uploadScale }], opacity: uploadOpacity }]}>
-          <Ionicons name="cloud-upload-outline" size={18} color={DS.brandNavy} />
-          <Text style={styles.actionBtnText}>Upload</Text>
-        </Animated.View>
-      </TouchableOpacity>
-      <TouchableOpacity activeOpacity={1} onPressIn={() => pressIn(manualScale, manualOpacity)} onPressOut={() => pressOut(manualScale, manualOpacity)} onPress={() => navigation?.navigate("ManualEntry")} style={{ flex: 1 }}>
-        <Animated.View style={[styles.actionBtn, { transform: [{ scale: manualScale }], opacity: manualOpacity }]}>
-          <Icon name="edit-3" size={16} color={DS.brandNavy} />
-          <Text style={styles.actionBtnText}>Manual</Text>
-        </Animated.View>
-      </TouchableOpacity>
-    </View>
+    <>
+      <View style={styles.actionRow}>
+        <TouchableOpacity activeOpacity={1} onPressIn={() => pressIn(uploadScale, uploadOpacity)} onPressOut={() => pressOut(uploadScale, uploadOpacity)} onPress={handleUpload} style={{ flex: 1 }}>
+          <Animated.View style={[styles.actionBtn, { transform: [{ scale: uploadScale }], opacity: uploadOpacity }]}>
+            <Ionicons name="cloud-upload-outline" size={18} color={DS.brandNavy} />
+            <Text style={styles.actionBtnText}>Upload</Text>
+          </Animated.View>
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={1} onPressIn={() => pressIn(manualScale, manualOpacity)} onPressOut={() => pressOut(manualScale, manualOpacity)} onPress={() => navigation?.navigate("ManualEntry")} style={{ flex: 1 }}>
+          <Animated.View style={[styles.actionBtn, { transform: [{ scale: manualScale }], opacity: manualOpacity }]}>
+            <Icon name="edit-3" size={16} color={DS.brandNavy} />
+            <Text style={styles.actionBtnText}>Manual</Text>
+          </Animated.View>
+        </TouchableOpacity>
+      </View>
+
+      <CreditModal
+        visible={creditModal.visible}
+        type={creditModal.type}
+        onClose={closeModal}
+        extraContent={
+          creditModal.type === 'partial_credits' ? (
+            <PartialCreditsInfo
+              creditsLeft={creditModal.creditsLeft || 0}
+              photosCount={creditModal.photosCount || 0}
+            />
+          ) : null
+        }
+        buttons={
+          creditModal.type === 'zero_credits'
+            ? [
+                { text: 'View Plans', icon: 'flash', onPress: () => { closeModal(); navigation.navigate('Paywall', { initialTab: 'premium' }); }, style: 'gold' },
+                { text: 'Cancel', onPress: closeModal, style: 'secondary' },
+              ]
+            : [
+                { text: `Process ${creditModal.creditsLeft || 0}`, onPress: handlePartialProcess, style: 'primary' },
+                { text: 'View Plans', onPress: () => { closeModal(); navigation.navigate('Paywall', { initialTab: 'premium' }); }, style: 'gold' },
+              ]
+        }
+      />
+    </>
   );
 }
 
