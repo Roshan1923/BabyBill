@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
   restoreBtn: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: DS.bgSurface2, borderRadius: 20 },
   restoreText: { fontSize: 13, fontWeight: '600', color: DS.textSecondary },
   heroSection: { alignItems: 'center', paddingTop: 2, paddingBottom: 14 },
-  logoContainer: { marginBottom: 10, position: 'relative' },
+  logoContainer: { marginBottom: 6, position: 'relative' },
   logoImage: { width: 56, height: 56, borderRadius: 18 },
   heroTitle: { fontSize: 26, fontWeight: '800', color: DS.textPrimary, letterSpacing: -0.5, marginBottom: 3 },
   heroSubtitle: { fontSize: 14, fontWeight: '400', color: DS.textSecondary },
