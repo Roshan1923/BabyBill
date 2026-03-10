@@ -330,6 +330,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    paddingHorizontal: 20
   },
   buttonBorder: {
     borderWidth: 1.5,
