@@ -135,6 +135,8 @@ export default function SettingsScreen({ navigation }) {
 
   const { credits, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
 
+  const { credits, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
+
   useFocusEffect(
     useCallback(() => {
       fetchCredits();
@@ -212,6 +214,7 @@ export default function SettingsScreen({ navigation }) {
     : (planLimit > 0 && planRemaining / planLimit <= 0.2) ? DS.accentGold
     : accentColor;
 
+  // Navigate to paywall with specific tab
   const navigatePaywall = (tab) => {
     navigation.navigate('Paywall', { initialTab: tab });
   };
@@ -231,6 +234,7 @@ export default function SettingsScreen({ navigation }) {
           <>
             {/* ── Profile + Plan Card ── */}
             <View style={styles.profileCard}>
+              {/* Profile row */}
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => navigation.navigate("ProfileEdit", { user, profile })}
@@ -254,6 +258,7 @@ export default function SettingsScreen({ navigation }) {
 
               {/* Plan + Credits section */}
               <View style={styles.planSection}>
+                {/* Plan badge + total credits */}
                 <View style={styles.planTopRow}>
                   <View style={styles.planNameWrap}>
                     <Ionicons
@@ -274,7 +279,9 @@ export default function SettingsScreen({ navigation }) {
                   </Text>
                 </View>
 
+                {/* ── Dual credit bars ── */}
                 <View style={styles.barsContainer}>
+                  {/* Plan credits bar */}
                   <View style={styles.barRow}>
                     <View style={styles.barLabelRow}>
                       <Text style={styles.barLabel}>{isFree ? 'Free' : tierName}</Text>
@@ -288,6 +295,7 @@ export default function SettingsScreen({ navigation }) {
                     </View>
                   </View>
 
+                  {/* Top-up credits bar — only show if user has any */}
                   {topupCredits > 0 && (
                     <View style={styles.barRow}>
                       <View style={styles.barLabelRow}>
@@ -307,25 +315,42 @@ export default function SettingsScreen({ navigation }) {
                   )}
                 </View>
 
+                {/* Action buttons */}
                 <View style={styles.planActions}>
                   {isFree ? (
                     <>
-                      <TouchableOpacity style={styles.upgradeBtn} onPress={() => navigatePaywall('premium')} activeOpacity={0.85}>
+                      <TouchableOpacity
+                        style={styles.upgradeBtn}
+                        onPress={() => navigatePaywall('premium')}
+                        activeOpacity={0.85}
+                      >
                         <Ionicons name="flash" size={14} color={DS.textInverse} />
                         <Text style={styles.upgradeBtnText}>Upgrade Plan</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.buyCreditsBtn} onPress={() => navigatePaywall('topup')} activeOpacity={0.8}>
+                      <TouchableOpacity
+                        style={styles.buyCreditsBtn}
+                        onPress={() => navigatePaywall('topup')}
+                        activeOpacity={0.8}
+                      >
                         <Ionicons name="add-circle-outline" size={14} color={DS.brandNavy} />
                         <Text style={styles.buyCreditsBtnText}>Buy Credits</Text>
                       </TouchableOpacity>
                     </>
                   ) : (
                     <>
-                      <TouchableOpacity style={styles.changePlanBtn} onPress={() => navigatePaywall(isPremium ? 'premium' : 'essential')} activeOpacity={0.85}>
+                      <TouchableOpacity
+                        style={styles.changePlanBtn}
+                        onPress={() => navigatePaywall(isPremium ? 'premium' : 'essential')}
+                        activeOpacity={0.85}
+                      >
                         <Ionicons name="swap-horizontal" size={14} color={DS.textInverse} />
                         <Text style={styles.changePlanBtnText}>View Plans</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.buyCreditsBtn} onPress={() => navigatePaywall('topup')} activeOpacity={0.8}>
+                      <TouchableOpacity
+                        style={styles.buyCreditsBtn}
+                        onPress={() => navigatePaywall('topup')}
+                        activeOpacity={0.8}
+                      >
                         <Ionicons name="add-circle-outline" size={14} color={DS.brandNavy} />
                         <Text style={styles.buyCreditsBtnText}>Buy Credits</Text>
                       </TouchableOpacity>
@@ -333,6 +358,7 @@ export default function SettingsScreen({ navigation }) {
                   )}
                 </View>
 
+                {/* Manage billing — subscribers only */}
                 {isSubscribed && (
                   <TouchableOpacity
                     style={styles.manageBillingRow}
@@ -458,6 +484,7 @@ const styles = StyleSheet.create({
   loadingContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
   pageTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.3, marginBottom: 20, color: DS.textPrimary },
 
+  // Profile + Plan unified card
   profileCard: {
     borderRadius: SIZING.cardRadius, borderWidth: 1, marginBottom: 24,
     backgroundColor: DS.bgSurface, borderColor: DS.border,
@@ -470,18 +497,23 @@ const styles = StyleSheet.create({
   profileInfo: { flex: 1, marginLeft: 16 },
   profileName: { fontSize: 18, fontWeight: "700", color: DS.textPrimary },
   profileEmail: { fontSize: 13, fontWeight: "400", marginTop: 3, color: DS.textSecondary },
+
   profileDivider: { height: 1, backgroundColor: DS.border, marginHorizontal: SIZING.cardPad },
 
+  // Plan section
   planSection: { padding: SIZING.cardPad, paddingTop: 14, paddingBottom: 18 },
+
   planTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   planNameWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   planName: { fontSize: 15, fontWeight: '700' },
   planPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
   planPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+
   totalCredits: { flexDirection: 'row', alignItems: 'baseline' },
   totalCreditsNum: { fontSize: 18, fontWeight: '800', color: DS.textPrimary },
   totalCreditsLabel: { fontSize: 12, fontWeight: '400', color: DS.textMuted },
 
+  // Dual bars
   barsContainer: { gap: 10, marginBottom: 4 },
   barRow: {},
   barLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
@@ -490,28 +522,41 @@ const styles = StyleSheet.create({
   barCountNum: { fontSize: 12, fontWeight: '700' },
   barCountOf: { fontSize: 11, fontWeight: '400', color: DS.textMuted },
   topupLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+
   barTrack: { height: 5, backgroundColor: DS.bgSurface2, borderRadius: 3, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3 },
 
+  // Action buttons
   planActions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+
   upgradeBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20, backgroundColor: DS.accentGold,
-    ...Platform.select({ ios: { shadowColor: DS.accentGold, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 }, android: { elevation: 3 } }),
+    ...Platform.select({
+      ios: { shadowColor: DS.accentGold, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
   },
   upgradeBtnText: { fontSize: 13, fontWeight: '700', color: DS.textInverse },
+
   changePlanBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20, backgroundColor: DS.brandNavy,
-    ...Platform.select({ ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6 }, android: { elevation: 3 } }),
+    ...Platform.select({
+      ios: { shadowColor: DS.brandNavy, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
   },
   changePlanBtnText: { fontSize: 13, fontWeight: '700', color: DS.textInverse },
+
   buyCreditsBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, height: 40, borderRadius: 20,
     backgroundColor: DS.bgSurface, borderWidth: 1.5, borderColor: DS.brandNavy,
   },
   buyCreditsBtnText: { fontSize: 13, fontWeight: '600', color: DS.brandNavy },
+
+  // Manage billing
   manageBillingRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, marginTop: 12, paddingTop: 12,
@@ -519,6 +564,7 @@ const styles = StyleSheet.create({
   },
   manageBillingText: { fontSize: 12, fontWeight: '500', color: DS.textSecondary },
 
+  // Sections
   sectionLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8, marginLeft: 4, color: DS.textSecondary },
   sectionCard: {
     borderRadius: SIZING.cardRadius, paddingHorizontal: 16, borderWidth: 1, marginBottom: 24,
