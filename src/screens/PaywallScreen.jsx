@@ -502,8 +502,7 @@ export default function PaywallScreen({ navigation, route }) {
 // ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: DS.bgPage },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 8 },
-  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: DS.bgSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: DS.border },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 4 },  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: DS.bgSurface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: DS.border },
   restoreBtn: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: DS.bgSurface2, borderRadius: 20 },
   restoreText: { fontSize: 13, fontWeight: '600', color: DS.textSecondary },
   heroSection: { alignItems: 'center', paddingTop: 0, paddingBottom: 10 },
