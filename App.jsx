@@ -30,6 +30,7 @@ import ReviewReceiptScreen from './src/screens/ReviewReceiptScreen';
 import { NotificationProvider } from './src/context/NotificationContext';
 import CategoryScreen from './src/screens/CategoryScreen';
 import { CreditsProvider } from './src/context/CreditsContext';
+import GmailReceiptScreen from './src/screens/GmailReceiptScreen';
 
 
 // Auth screens
@@ -142,6 +143,11 @@ const App = () => {
                         name="ScanGallery"
                         component={ScanGalleryScreen}
                         options={{ animation: 'slide_from_left' }}
+                        />
+                        <Stack.Screen
+                        name="GmailReceipts"
+                        component={GmailReceiptScreen}
+                        options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen
                         name="ProfileEdit"

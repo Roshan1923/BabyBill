@@ -131,6 +131,7 @@ export default function SettingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
 
   const { credits, tierName, isSubscribed, activeRemaining, fetchCredits } = useCredits();
 
@@ -156,6 +157,13 @@ export default function SettingsScreen({ navigation }) {
             } else {
               setAvatarUrl(null);
             }
+            // Check Gmail connection status
+            const { data: gmailData } = await supabase
+              .from("gmail_connections")
+              .select("id")
+              .eq("user_id", authUser.id)
+              .maybeSingle();
+            setGmailConnected(!!gmailData);
           }
         } catch (e) {
           console.error("Error fetching user:", e);
@@ -379,7 +387,48 @@ export default function SettingsScreen({ navigation }) {
                 onPress={() => navigation.navigate("Categories")} isLast />
             </View>
 
-            {/* Support */}
+            {/* ── Integrations ── */}
+            <Text style={styles.sectionLabel}>INTEGRATIONS</Text>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => navigation.navigate("GmailReceipts")}
+              style={styles.gmailCard}
+            >
+
+
+              <View style={styles.gmailCardInner}>
+                {/* Left: icon + text */}
+                <View style={styles.gmailCardLeft}>
+                  {/* Mail icon */}
+                  <View style={styles.gmailIconWrap}>
+                    <Ionicons name="mail" size={22} color={DS.accentGold} />
+                  </View>
+                  <View style={styles.gmailTextBlock}>
+                    <View style={styles.gmailLabelRow}>
+                      <Text style={styles.gmailLabel}>Connect Gmail</Text>
+                      {gmailConnected && (
+                        <View style={styles.gmailConnectedBadge}>
+                          <View style={styles.gmailConnectedDot} />
+                          <Text style={styles.gmailConnectedText}>Connected</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.gmailSublabel}>
+                      {gmailConnected
+                        ? "Auto-detecting receipts from your inbox"
+                        : "Automatically find receipts in your inbox"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Right: arrow */}
+                <View style={styles.gmailArrowWrap}>
+                  <Icon name="chevron-right" size={16} color={DS.brandNavy} />
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            {/* ── Support ── */}
             <Text style={styles.sectionLabel}>SUPPORT</Text>
             <View style={styles.sectionCard}>
               <SettingsRow icon="help-circle" iconLib="feather" iconColor="#E8A020"
@@ -518,6 +567,49 @@ const styles = StyleSheet.create({
     borderRadius: SIZING.cardRadius, paddingHorizontal: 16, borderWidth: 1, marginBottom: 24,
     backgroundColor: DS.bgSurface, borderColor: DS.border,
     ...Platform.select({ ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 }, android: { elevation: 2 } }),
+  },
+  // Gmail feature highlight card
+  gmailCard: {
+    borderRadius: SIZING.cardRadius, borderWidth: 1, marginBottom: 24,
+    backgroundColor: DS.bgSurface, borderColor: DS.border,
+    overflow: 'hidden', minHeight: 80,
+    ...Platform.select({
+      ios: { shadowColor: DS.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 20 },
+      android: { elevation: 3 },
+    }),
+  },
+  gmailBlob1: {
+    position: 'absolute', width: 130, height: 130, borderRadius: 65,
+    backgroundColor: DS.accentGoldSub, top: -50, right: -30,
+  },
+  gmailBlob2: {
+    position: 'absolute', width: 70, height: 70, borderRadius: 35,
+    backgroundColor: DS.brandNavy + '08', bottom: -25, right: 80,
+  },
+  gmailCardInner: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 18, paddingHorizontal: 16, gap: 14,
+  },
+  gmailCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  gmailIconWrap: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: DS.accentGoldSub, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: DS.accentGold + '30',
+  },
+  gmailMText: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  gmailTextBlock: { flex: 1 },
+  gmailLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  gmailLabel: { fontSize: 15, fontWeight: '700', color: DS.textPrimary },
+  gmailConnectedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: DS.positive + '14', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20,
+  },
+  gmailConnectedDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: DS.positive },
+  gmailConnectedText: { fontSize: 10, fontWeight: '700', color: DS.positive },
+  gmailSublabel: { fontSize: 12, fontWeight: '400', color: DS.textSecondary, lineHeight: 16 },
+  gmailArrowWrap: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: DS.bgSurface2, alignItems: 'center', justifyContent: 'center',
   },
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", height: 52, borderRadius: 999, borderWidth: 1, gap: 8, marginBottom: 16,

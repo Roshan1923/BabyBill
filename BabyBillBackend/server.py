@@ -4,7 +4,8 @@ import json
 import uuid
 import httpx
 import io
-from datetime import datetime, timezone
+import base64
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -13,6 +14,9 @@ from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 from openai import OpenAI
 from PIL import Image
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 
 
 load_dotenv()
@@ -129,6 +133,10 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 # RevenueCat webhook secret (set in Render env vars)
 RC_WEBHOOK_SECRET = os.getenv("RC_WEBHOOK_SECRET")
 
+# Google OAuth credentials (set in Render env vars)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
 # HTTP timeout for all Supabase calls (seconds)
 HTTP_TIMEOUT = 15.0
 
@@ -137,7 +145,7 @@ DEFAULT_CATEGORIES = ["Food", "Bills", "Gas", "Shopping", "Medical", "Other"]
 
 # RevenueCat product ID → tier and credit limit mapping
 RC_PRODUCT_MAP = {
-     "billbrain_essential_monthly": {"tier": "essential", "sub_limit": 100},
+    "billbrain_essential_monthly": {"tier": "essential", "sub_limit": 100},
     "billbrain_premium_monthly": {"tier": "premium", "sub_limit": 250},
 }
 
@@ -740,6 +748,164 @@ def upload_image_to_supabase(image_bytes, filename):
 
 
 #-----------------------------------------------------------------------------------------------
+# ── Gmail Helpers ──
+
+def get_gmail_credentials(conn_data):
+    """Build Google OAuth Credentials from stored token data and refresh if expired."""
+    creds = Credentials(
+        token=conn_data['access_token'],
+        refresh_token=conn_data.get('refresh_token'),
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
+
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        # Save refreshed token back to Supabase
+        httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={"user_id": f"eq.{conn_data['user_id']}"},
+            json={
+                "access_token": creds.token,
+                "token_expiry": creds.expiry.isoformat() if creds.expiry else None,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+    return creds
+
+
+def extract_email_text(full_msg):
+    """Extract plain text or HTML body from a Gmail message."""
+    try:
+        payload = full_msg.get('payload', {})
+        parts = payload.get('parts', [])
+
+        if not parts:
+            body_data = payload.get('body', {}).get('data', '')
+            if body_data:
+                return base64.urlsafe_b64decode(body_data).decode('utf-8', errors='ignore')
+
+        # Prefer plain text
+        for part in parts:
+            if part.get('mimeType') == 'text/plain':
+                body_data = part.get('body', {}).get('data', '')
+                if body_data:
+                    return base64.urlsafe_b64decode(body_data).decode('utf-8', errors='ignore')
+
+        # Recurse into multipart
+        for part in parts:
+            if part.get('mimeType', '').startswith('multipart/'):
+                sub_parts = part.get('parts', [])
+                for sp in sub_parts:
+                    if sp.get('mimeType') == 'text/plain':
+                        body_data = sp.get('body', {}).get('data', '')
+                        if body_data:
+                            return base64.urlsafe_b64decode(body_data).decode('utf-8', errors='ignore')
+
+        # Fallback to HTML
+        for part in parts:
+            if part.get('mimeType') == 'text/html':
+                body_data = part.get('body', {}).get('data', '')
+                if body_data:
+                    return base64.urlsafe_b64decode(body_data).decode('utf-8', errors='ignore')
+
+        return None
+    except Exception as e:
+        print(f"⚠️ Email text extraction error: {e}")
+        return None
+
+
+def get_email_header(full_msg, header_name):
+    """Get a specific header value from a Gmail message."""
+    headers = full_msg.get('payload', {}).get('headers', [])
+    for h in headers:
+        if h.get('name', '').lower() == header_name.lower():
+            return h.get('value', '')
+    return ''
+
+
+def extract_receipt_from_email(email_text, subject, from_addr):
+    """Use GPT to determine if email is a receipt and extract structured data.
+    Returns dict if receipt found, None if not a receipt."""
+    try:
+        truncated = email_text[:3000]
+
+        prompt = f"""You are analyzing an email to determine if it contains a receipt, order confirmation, invoice, or any record of a financial transaction.
+
+Email Subject: {subject}
+From: {from_addr}
+Email Content:
+{truncated}
+
+If this email contains a receipt, order confirmation, invoice, or financial transaction, extract the data and respond with ONLY a JSON object:
+{{
+  "is_receipt": true,
+  "store_name": "Store name",
+  "total_amount": 49.99,
+  "date": "2024-01-15",
+  "currency": "CAD",
+  "category": "Shopping",
+  "items": [
+    {{"name": "Item name", "price": 49.99, "quantity": 1}}
+  ]
+}}
+
+If this is NOT a receipt or financial transaction (newsletter, promotion, marketing, general email), respond with ONLY:
+{{"is_receipt": false}}
+
+Rules:
+- Only return true for actual transactions where money was spent or will be spent
+- Promotional emails showing prices are NOT receipts
+- Shipping notifications without totals are NOT receipts
+- Respond with JSON only. No explanation."""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=500,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        raw = raw.replace('```json', '').replace('```', '').strip()
+        data = json.loads(raw)
+
+        if not data.get('is_receipt'):
+            return None
+
+        return data
+
+    except Exception as e:
+        print(f"⚠️ GPT email extraction error: {e}")
+        return None
+
+
+def get_gmail_connection(user_id):
+    """Fetch stored Gmail connection for a user from Supabase."""
+    try:
+        response = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers=service_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "limit": "1",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data[0] if data else None
+        return None
+    except Exception as e:
+        print(f"⚠️ get_gmail_connection error: {e}")
+        return None
+
+
+#-----------------------------------------------------------------------------------------------
 # ── API Routes ──
 
 @app.route("/process-receipt", methods=["POST"])
@@ -918,6 +1084,566 @@ def credits_balance():
         return jsonify(balance), 200
     else:
         return jsonify({"error": "Could not fetch credit balance"}), 500
+
+
+#-----------------------------------------------------------------------------------------------
+# ── Gmail Routes ──
+
+@app.route("/gmail/connect", methods=["POST"])
+def gmail_connect():
+    """Exchange server_auth_code for Gmail OAuth tokens and save them."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        server_auth_code = data.get('server_auth_code')
+        gmail_email = data.get('email')
+
+        if not server_auth_code:
+            return jsonify({"error": "server_auth_code is required"}), 400
+
+        # Exchange auth code for access + refresh tokens
+        token_response = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": server_auth_code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": "",  # empty string for mobile serverAuthCode flow
+                "grant_type": "authorization_code",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if token_response.status_code != 200:
+            print(f"❌ Token exchange failed: {token_response.status_code} - {token_response.text}")
+            return jsonify({"error": "Failed to exchange auth code with Google"}), 400
+
+        tokens = token_response.json()
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in", 3600)
+        token_expiry = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+
+        if not access_token:
+            return jsonify({"error": "No access token returned from Google"}), 400
+
+        # Fetch email from Google if not provided
+        if not gmail_email:
+            try:
+                userinfo_res = httpx.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=HTTP_TIMEOUT,
+                )
+                if userinfo_res.status_code == 200:
+                    gmail_email = userinfo_res.json().get("email")
+            except Exception:
+                pass
+
+        # Upsert into Supabase
+        response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers={**service_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
+            json={
+                "user_id": user_id,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_expiry": token_expiry,
+                "email": gmail_email,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code in [200, 201, 204]:
+            print(f"✅ Gmail connected for user {user_id} ({gmail_email})")
+            return jsonify({"success": True, "email": gmail_email})
+        else:
+            print(f"⚠️ Gmail connect save error: {response.status_code} - {response.text}")
+            return jsonify({"error": "Failed to save Gmail connection"}), 500
+
+    except Exception as e:
+        print(f"❌ gmail_connect error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/status", methods=["GET"])
+def gmail_status():
+    """Check if Gmail is connected for the authenticated user."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        conn = get_gmail_connection(user_id)
+        if conn:
+            return jsonify({
+                "connected": True,
+                "email": conn.get("email"),
+            })
+        return jsonify({"connected": False})
+
+    except Exception as e:
+        print(f"❌ gmail_status error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/disconnect", methods=["POST"])
+def gmail_disconnect():
+    """Remove Gmail connection for the authenticated user."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        response = httpx.delete(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={"user_id": f"eq.{user_id}"},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        print(f"🔌 Gmail disconnected for user {user_id}")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"❌ gmail_disconnect error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/scan-range", methods=["POST"])
+def gmail_scan_range():
+    """Scan Gmail for receipt emails within a date range."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        data = request.get_json()
+        start_date = data.get('start_date')  # format: "2024/01/01"
+        end_date = data.get('end_date')      # format: "2024/12/31"
+
+        if not start_date or not end_date:
+            return jsonify({"error": "start_date and end_date are required"}), 400
+
+        # Get stored Gmail connection
+        conn = get_gmail_connection(user_id)
+        if not conn:
+            return jsonify({"error": "Gmail not connected"}), 400
+
+        # Build credentials and refresh if needed
+        creds = get_gmail_credentials(conn)
+        service = build('gmail', 'v1', credentials=creds)
+
+        # Search query — spending-related emails only
+        query = (
+            f"after:{start_date} before:{end_date} "
+            f"(subject:receipt OR subject:order OR subject:invoice OR "
+            f"subject:confirmation OR subject:payment OR subject:\"order confirmation\" "
+            f"OR subject:\"your receipt\" OR subject:\"purchase confirmation\")"
+        )
+
+        print(f"📧 Scanning Gmail for user {user_id} from {start_date} to {end_date}")
+
+        results = service.users().messages().list(
+            userId='me',
+            q=query,
+            maxResults=100
+        ).execute()
+
+        messages = results.get('messages', [])
+        print(f"📬 Found {len(messages)} candidate emails")
+
+        detected = []
+        skipped_duplicate = 0
+        skipped_not_receipt = 0
+
+        for msg in messages:
+            msg_id = msg['id']
+
+            # Skip already processed emails
+            existing_response = httpx.get(
+                f"{SUPABASE_URL}/rest/v1/email_receipts",
+                headers=service_headers(),
+                params={
+                    "user_id": f"eq.{user_id}",
+                    "gmail_message_id": f"eq.{msg_id}",
+                    "limit": "1",
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+
+            if existing_response.status_code == 200 and existing_response.json():
+                skipped_duplicate += 1
+                continue
+
+            # Fetch full email content
+            try:
+                full_msg = service.users().messages().get(
+                    userId='me',
+                    id=msg_id,
+                    format='full'
+                ).execute()
+            except Exception as e:
+                print(f"⚠️ Failed to fetch message {msg_id}: {e}")
+                continue
+
+            email_text = extract_email_text(full_msg)
+            subject = get_email_header(full_msg, 'Subject')
+            from_addr = get_email_header(full_msg, 'From')
+
+            if not email_text:
+                skipped_not_receipt += 1
+                continue
+
+            # Ask GPT: is this a receipt?
+            receipt_data = extract_receipt_from_email(email_text, subject, from_addr)
+
+            if not receipt_data:
+                skipped_not_receipt += 1
+                continue
+
+            # Save to email_receipts table as pending
+            save_response = httpx.post(
+                f"{SUPABASE_URL}/rest/v1/email_receipts",
+                headers={**service_headers(), "Prefer": "return=representation"},
+                json={
+                    "user_id": user_id,
+                    "gmail_message_id": msg_id,
+                    "store_name": receipt_data.get('store_name'),
+                    "total_amount": float(receipt_data.get('total_amount', 0)),
+                    "date": receipt_data.get('date'),
+                    "currency": receipt_data.get('currency', 'CAD'),
+                    "category": receipt_data.get('category'),
+                    "items": receipt_data.get('items', []),
+                    "raw_subject": subject,
+                    "raw_from": from_addr,
+                    "status": "pending",
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+
+            if save_response.status_code in [200, 201]:
+                saved = save_response.json()
+                detected.append(saved[0] if isinstance(saved, list) else saved)
+                print(f"  ✅ Receipt found: {receipt_data.get('store_name')} ${receipt_data.get('total_amount')}")
+            else:
+                print(f"  ⚠️ Failed to save email receipt: {save_response.status_code}")
+
+        print(f"📊 Scan complete: {len(detected)} receipts found, {skipped_not_receipt} not receipts, {skipped_duplicate} already processed")
+
+        return jsonify({
+            "success": True,
+            "detected": detected,
+            "count": len(detected),
+            "scanned": len(messages),
+        })
+
+    except Exception as e:
+        print(f"❌ gmail_scan_range error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/pending", methods=["GET"])
+def gmail_pending():
+    """Get all pending email receipts waiting for user approval."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        response = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/email_receipts",
+            headers=service_headers(),
+            params={
+                "user_id": f"eq.{user_id}",
+                "status": "eq.pending",
+                "order": "created_at.desc",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if response.status_code == 200:
+            return jsonify({"success": True, "receipts": response.json()})
+        return jsonify({"error": "Failed to fetch pending receipts"}), 500
+
+    except Exception as e:
+        print(f"❌ gmail_pending error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/approve", methods=["POST"])
+def gmail_approve():
+    """User approved an email receipt — save it to the main receipts table."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        data = request.get_json()
+        email_receipt_id = data.get('email_receipt_id')
+
+        if not email_receipt_id:
+            return jsonify({"error": "email_receipt_id is required"}), 400
+
+        # Fetch the pending email receipt
+        fetch_response = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/email_receipts",
+            headers=service_headers(),
+            params={
+                "id": f"eq.{email_receipt_id}",
+                "user_id": f"eq.{user_id}",
+                "limit": "1",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if fetch_response.status_code != 200 or not fetch_response.json():
+            return jsonify({"error": "Email receipt not found"}), 404
+
+        er = fetch_response.json()[0]
+
+        # Insert into main receipts table
+        receipt_response = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/receipts",
+            headers={**service_headers(), "Prefer": "return=representation"},
+            json={
+                "user_id": user_id,
+                "store_name": er.get('store_name', 'Unknown'),
+                "date": er.get('date'),
+                "total_amount": str(er.get('total_amount', '0.00')),
+                "subtotal": "0.00",
+                "tax": "0.00",
+                "discount": "0.00",
+                "payment_method": "Unknown",
+                "category": er.get('category', 'Other'),
+                "items": er.get('items', []),
+                "raw_text": "",
+                "image_url": None,
+                "status": "completed",
+                "document_type": "receipt",
+                "direction": "outgoing",
+                "payment_status": "paid",
+                "source": "email",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if receipt_response.status_code not in [200, 201]:
+            return jsonify({"error": "Failed to save receipt"}), 500
+
+        saved_receipt = receipt_response.json()
+        receipt = saved_receipt[0] if isinstance(saved_receipt, list) else saved_receipt
+
+        # Mark email receipt as approved
+        httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/email_receipts",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={"id": f"eq.{email_receipt_id}"},
+            json={"status": "approved"},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        print(f"✅ Email receipt approved: {er.get('store_name')} ${er.get('total_amount')}")
+        return jsonify({"success": True, "receipt": receipt})
+
+    except Exception as e:
+        print(f"❌ gmail_approve error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/dismiss", methods=["POST"])
+def gmail_dismiss():
+    """User dismissed an email receipt — mark it as rejected."""
+    try:
+        user_id, auth_error = verify_supabase_token(request)
+        if not user_id:
+            return jsonify({"error": auth_error or "Authentication required"}), 401
+
+        data = request.get_json()
+        email_receipt_id = data.get('email_receipt_id')
+
+        if not email_receipt_id:
+            return jsonify({"error": "email_receipt_id is required"}), 400
+
+        httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/email_receipts",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={
+                "id": f"eq.{email_receipt_id}",
+                "user_id": f"eq.{user_id}",
+            },
+            json={"status": "rejected"},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"❌ gmail_dismiss error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/gmail/webhook", methods=["POST"])
+def gmail_webhook():
+    """Receive Google Pub/Sub push notifications for new emails."""
+    try:
+        envelope = request.get_json()
+        if not envelope:
+            return 'OK', 200
+
+        pubsub_message = envelope.get('message', {})
+        data = pubsub_message.get('data', '')
+
+        if not data:
+            return 'OK', 200
+
+        decoded = base64.b64decode(data).decode('utf-8')
+        notification = json.loads(decoded)
+        email_address = notification.get('emailAddress')
+        history_id = notification.get('historyId')
+
+        print(f"📨 Gmail webhook: new email for {email_address} (historyId: {history_id})")
+
+        # Find the user by their Gmail address
+        conn_response = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers=service_headers(),
+            params={
+                "email": f"eq.{email_address}",
+                "limit": "1",
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+
+        if conn_response.status_code != 200 or not conn_response.json():
+            print(f"⚠️ No user found for Gmail {email_address}")
+            return 'OK', 200
+
+        conn = conn_response.json()[0]
+        user_id = conn['user_id']
+
+        # Get credentials
+        creds = get_gmail_credentials(conn)
+        service = build('gmail', 'v1', credentials=creds)
+
+        # Get history since last known historyId
+        last_history_id = conn.get('watch_history_id')
+
+        if not last_history_id:
+            # First webhook — just save historyId and wait for next one
+            httpx.patch(
+                f"{SUPABASE_URL}/rest/v1/gmail_connections",
+                headers={**service_headers(), "Prefer": "return=minimal"},
+                params={"user_id": f"eq.{user_id}"},
+                json={"watch_history_id": str(history_id)},
+                timeout=HTTP_TIMEOUT,
+            )
+            return 'OK', 200
+
+        # Fetch new messages since last historyId
+        try:
+            history_response = service.users().history().list(
+                userId='me',
+                startHistoryId=last_history_id,
+                historyTypes=['messageAdded'],
+            ).execute()
+        except Exception as e:
+            print(f"⚠️ History fetch error: {e}")
+            return 'OK', 200
+
+        history_records = history_response.get('history', [])
+        new_message_ids = []
+
+        for record in history_records:
+            for msg_added in record.get('messagesAdded', []):
+                new_message_ids.append(msg_added['message']['id'])
+
+        print(f"📬 {len(new_message_ids)} new message(s) to check")
+
+        for msg_id in new_message_ids:
+            # Skip already processed
+            existing = httpx.get(
+                f"{SUPABASE_URL}/rest/v1/email_receipts",
+                headers=service_headers(),
+                params={
+                    "user_id": f"eq.{user_id}",
+                    "gmail_message_id": f"eq.{msg_id}",
+                    "limit": "1",
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+
+            if existing.status_code == 200 and existing.json():
+                continue
+
+            # Fetch full message
+            try:
+                full_msg = service.users().messages().get(
+                    userId='me',
+                    id=msg_id,
+                    format='full'
+                ).execute()
+            except Exception as e:
+                print(f"⚠️ Failed to fetch message {msg_id}: {e}")
+                continue
+
+            email_text = extract_email_text(full_msg)
+            subject = get_email_header(full_msg, 'Subject')
+            from_addr = get_email_header(full_msg, 'From')
+
+            if not email_text:
+                continue
+
+            receipt_data = extract_receipt_from_email(email_text, subject, from_addr)
+
+            if not receipt_data:
+                print(f"  ⏭️ Not a receipt: {subject}")
+                continue
+
+            # Save as pending
+            httpx.post(
+                f"{SUPABASE_URL}/rest/v1/email_receipts",
+                headers={**service_headers(), "Prefer": "return=minimal"},
+                json={
+                    "user_id": user_id,
+                    "gmail_message_id": msg_id,
+                    "store_name": receipt_data.get('store_name'),
+                    "total_amount": float(receipt_data.get('total_amount', 0)),
+                    "date": receipt_data.get('date'),
+                    "currency": receipt_data.get('currency', 'CAD'),
+                    "category": receipt_data.get('category'),
+                    "items": receipt_data.get('items', []),
+                    "raw_subject": subject,
+                    "raw_from": from_addr,
+                    "status": "pending",
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+
+            print(f"  ✅ New receipt detected: {receipt_data.get('store_name')} ${receipt_data.get('total_amount')}")
+            # TODO: Send push notification to user via FCM here
+
+        # Update watch_history_id to latest
+        httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/gmail_connections",
+            headers={**service_headers(), "Prefer": "return=minimal"},
+            params={"user_id": f"eq.{user_id}"},
+            json={"watch_history_id": str(history_id)},
+            timeout=HTTP_TIMEOUT,
+        )
+
+        return 'OK', 200
+
+    except Exception as e:
+        print(f"❌ gmail_webhook error: {str(e)}")
+        return 'OK', 200  # Always return 200 to Google
 
 
 #-----------------------------------------------------------------------------------------------
