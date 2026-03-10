@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
   restoreText: { fontSize: 13, fontWeight: '600', color: DS.textSecondary },
   heroSection: { alignItems: 'center', paddingTop: 2, paddingBottom: 14 },
   logoContainer: { marginBottom: 6, position: 'relative' },
-  logoImage: { width: 56, height: 56, borderRadius: 18 },
+  logoImage: { width: 72, height: 72, borderRadius: 22 },
   heroTitle: { fontSize: 26, fontWeight: '800', color: DS.textPrimary, letterSpacing: -0.5, marginBottom: 3 },
   heroSubtitle: { fontSize: 14, fontWeight: '400', color: DS.textSecondary },
   currentPlanChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: DS.positive + '10', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, gap: 5, marginTop: 8 },
