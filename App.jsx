@@ -33,7 +33,7 @@ import { CreditsProvider } from './src/context/CreditsContext';
 import GmailReceiptScreen from './src/screens/GmailReceiptScreen';
 import MyCardsScreen from './src/screens/MyCardsScreen';
 import CardDetailScreen from './src/screens/CardDetailScreen';
-import GiftCardsScreen from './src/screens/GiftCardsScreen';
+import GiftCardsScreen from './src/screens/GiftCardsScreen.jsx';
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
