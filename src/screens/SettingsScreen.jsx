@@ -373,6 +373,9 @@ export default function SettingsScreen({ navigation }) {
             {/* Preferences */}
             <Text style={styles.sectionLabel}>PREFERENCES</Text>
             <View style={styles.sectionCard}>
+              <SettingsRow icon="card-outline" iconLib="ionicons" iconColor="#1A3A6B"
+                label="My Cards" sublabel="Manage payment methods"
+                onPress={() => navigation.navigate("MyCards")} />
               <SettingsRow icon="notifications-outline" iconLib="ionicons" iconColor="#2563C8"
                 label="Notifications" sublabel="Manage alerts and reminders"
                 onPress={() => navigation.navigate("Notifications")} />

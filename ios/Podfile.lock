@@ -39,6 +39,8 @@ PODS:
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
   - PromisesObjC (2.4.0)
+  - PurchasesHybridCommon (17.42.0):
+    - RevenueCat (= 5.60.0)
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -2623,6 +2625,7 @@ PODS:
     - React-perflogger (= 0.83.1)
     - React-utils (= 0.83.1)
     - SocketRocket
+  - RevenueCat (5.60.0)
   - RNAppleAuthentication (2.5.1):
     - React-Core
   - RNCAsyncStorage (2.2.0):
@@ -2740,6 +2743,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNPurchases (9.11.1):
+    - PurchasesHybridCommon (= 17.42.0)
+    - React-Core
   - RNReanimated (4.2.2):
     - boost
     - DoubleConversion
@@ -3196,6 +3202,7 @@ DEPENDENCIES:
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
   - RNPermissions (from `../node_modules/react-native-permissions`)
+  - RNPurchases (from `../node_modules/react-native-purchases`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNShare (from `../node_modules/react-native-share`)
@@ -3215,6 +3222,8 @@ SPEC REPOS:
     - GTMAppAuth
     - GTMSessionFetcher
     - PromisesObjC
+    - PurchasesHybridCommon
+    - RevenueCat
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -3391,6 +3400,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-google-signin/google-signin"
   RNPermissions:
     :path: "../node_modules/react-native-permissions"
+  RNPurchases:
+    :path: "../node_modules/react-native-purchases"
   RNReanimated:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
@@ -3422,8 +3433,9 @@ SPEC CHECKSUMS:
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
   GTMAppAuth: 217a876b249c3c585a54fd6f73e6b58c4f5c4238
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
-  hermes-engine: f3017f4774fc0418ac3225c8a3a766c805014c71
+  hermes-engine: cd09ae2d96972540a69edc4472354381a30c35d2
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  PurchasesHybridCommon: c0a62a03bd15e40af1c3cd111f5f4f50cac751c7
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: a41bbdd9af30bf2e5715796b313e44ec43eefff1
   RCTRequired: 7be34aabb0b77c3cefe644528df0fa0afad4e4d0
@@ -3496,12 +3508,14 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: 0eb286cc274abb059ee601b862ebddac2e681d01
   ReactCodegen: 3d48510bcef445f6403c0004047d4d9cbb915435
   ReactCommon: ac934cb340aee91282ecd6f273a26d24d4c55cae
+  RevenueCat: 88010b2d5fc8fb7405d2e11dacd65ac74c9d21d1
   RNAppleAuthentication: a89c9804592b38ed4ab11f0aee68d05ba12ad432
   RNCAsyncStorage: 29f0230e1a25f36c20b05f65e2eb8958d6526e82
   RNFS: 89de7d7f4c0f6bafa05343c578f61118c8282ed8
   RNGestureHandler: cd4be101cfa17ea6bbd438710caa02e286a84381
   RNGoogleSignin: 4122717989e2544988cb4cec3e917da3ebc969a5
   RNPermissions: 455d17943b9aa25ea450fe02802bb9ea99354427
+  RNPurchases: c462eb24d72ed0878d487501c9ecc6c8d1ae7246
   RNReanimated: 18324d3313d6477e1d12836c20c3ee30afb5de30
   RNScreens: afaf526a9c804c3b4503f950cf3e67ed81e29ada
   RNShare: 60a6937925595bf06a0061ffe8a34dbbdd8c6584

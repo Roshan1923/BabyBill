@@ -20,6 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useProcessing } from '../context/ProcessingContext';
 import { supabase } from '../config/supabase';
 import AddCategoryModal from '../components/AddCategoryModal';
+import PaymentSection from '../components/PaymentSection';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -413,6 +414,15 @@ export default function ReviewReceiptScreen({ route, navigation }) {
           </View>
 
           {/* ── Items ── */}
+          {/* ── Payment Card (linked cards) ── */}
+          {receipt?.id && (
+            <PaymentSection
+              receiptId={receipt.id}
+              editing={true}
+              navigation={navigation}
+              legacyPaymentMethod={paymentMethod}
+            />
+          )}
           <View style={styles.card}>
             <View style={styles.itemsHeader}>
               <View style={styles.fieldLabel}>

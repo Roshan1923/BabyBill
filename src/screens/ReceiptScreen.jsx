@@ -131,19 +131,70 @@ function ReceiptRow({ item, categories, onPress }) {
   );
 }
 
-function EmptyState({ hasFilters }) {
+function EmptyState({ hasFilters, cardFilter }) {
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconCircle}>
-        <Ionicons name="receipt-outline" size={36} color={DS.textSecondary} />
+        <Ionicons name={cardFilter ? "card-outline" : "receipt-outline"} size={36} color={DS.textSecondary} />
       </View>
-      <Text style={styles.emptyTitle}>{hasFilters ? "No matching receipts" : "No receipts yet"}</Text>
+      <Text style={styles.emptyTitle}>
+        {cardFilter ? "No receipts on this card" : hasFilters ? "No matching receipts" : "No receipts yet"}
+      </Text>
       <Text style={styles.emptySubtitle}>
-        {hasFilters ? "Try adjusting your search or filters" : "Tap the scan button to capture your first receipt"}
+        {cardFilter
+          ? "Receipts paid with this card will appear here once scanned"
+          : hasFilters
+            ? "Try adjusting your search or filters"
+            : "Tap the scan button to capture your first receipt"}
       </Text>
     </View>
   );
 }
+
+// ─── Card Filter Chip ────────────────────────────────────────
+
+function CardFilterChip({ card, isGiftFilter, onClear }) {
+  if (!card && !isGiftFilter) return null;
+
+  const label = isGiftFilter
+    ? 'Gift Card Receipts'
+    : `${card.name || 'Card'}${card.last_four ? ` ····${card.last_four}` : ''}`;
+  const iconName = isGiftFilter ? 'gift' : 'card';
+  const chipColor = isGiftFilter ? DS.accentGold : (card?.color || DS.brandNavy);
+
+  return (
+    <View style={chipStyles.container}>
+      <View style={[chipStyles.chip, { borderColor: chipColor + '40', backgroundColor: chipColor + '10' }]}>
+        <View style={[chipStyles.dot, { backgroundColor: chipColor }]}>
+          <Ionicons name={iconName} size={11} color="#fff" />
+        </View>
+        <Text style={[chipStyles.label, { color: chipColor }]}>{label}</Text>
+        <TouchableOpacity activeOpacity={0.7} onPress={onClear} style={chipStyles.closeBtn}>
+          <Ionicons name="close" size={14} color={chipColor} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  container: { paddingHorizontal: DS.pagePad, marginTop: 10, marginBottom: 2 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    gap: 8, paddingVertical: 8, paddingLeft: 8, paddingRight: 12,
+    borderRadius: 12, borderWidth: 1.5,
+  },
+  dot: {
+    width: 24, height: 24, borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  label: { fontSize: 14, fontWeight: '600' },
+  closeBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    justifyContent: 'center', alignItems: 'center', marginLeft: 2,
+  },
+});
 
 // ─── Bottom Nav ──────────────────────────────────────────────
 
@@ -216,6 +267,10 @@ export default function ReceiptsScreen({ navigation, route }) {
   const [viewTab, setViewTab] = useState(initialTab);
   const [activeTab] = useState("Receipts");
 
+  // ── Card filter from navigation params ──
+  const [cardFilter, setCardFilter] = useState(route?.params?.filterByCard || null);
+  const [giftFilter, setGiftFilter] = useState(route?.params?.filterByGiftCards || false);
+
   const [receipts, setReceipts] = useState([]);
   const [userCategories, setUserCategories] = useState([]);
   const [searchText, setSearchText] = useState("");
@@ -231,9 +286,45 @@ export default function ReceiptsScreen({ navigation, route }) {
   const fetchReceipts = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from("receipts").select("*").order("created_at", { ascending: false });
-      if (error) console.log("Supabase error:", error.message);
-      else setReceipts(data || []);
+
+      if (cardFilter?.id || giftFilter) {
+        // ── Filtered fetch: join receipt_payments ──
+        // Get receipt IDs that match the filter
+        let rpQuery = supabase.from("receipt_payments").select("receipt_id");
+
+        if (cardFilter?.id) {
+          // Filter by specific card
+          rpQuery = rpQuery.eq("payment_method_id", cardFilter.id);
+        } else if (giftFilter) {
+          // Filter by gift card type
+          rpQuery = rpQuery.eq("raw_type", "gift_card");
+        }
+
+        const { data: rpData, error: rpError } = await rpQuery;
+        if (rpError) { console.log("Filter error:", rpError.message); setReceipts([]); return; }
+
+        const receiptIds = [...new Set((rpData || []).map(rp => rp.receipt_id))];
+
+        if (receiptIds.length === 0) {
+          setReceipts([]);
+          return;
+        }
+
+        // Fetch those receipts
+        const { data, error } = await supabase
+          .from("receipts")
+          .select("*")
+          .in("id", receiptIds)
+          .order("created_at", { ascending: false });
+
+        if (error) console.log("Supabase error:", error.message);
+        else setReceipts(data || []);
+      } else {
+        // ── Normal fetch: all receipts ──
+        const { data, error } = await supabase.from("receipts").select("*").order("created_at", { ascending: false });
+        if (error) console.log("Supabase error:", error.message);
+        else setReceipts(data || []);
+      }
     } catch (err) { console.log("Fetch error:", err); }
     finally { setLoading(false); }
   };
@@ -254,12 +345,33 @@ export default function ReceiptsScreen({ navigation, route }) {
   };
 
   useFocusEffect(useCallback(() => {
+    // Update filters from route params on each focus
+    if (route?.params?.filterByCard) {
+      setCardFilter(route.params.filterByCard);
+      setGiftFilter(false);
+    } else if (route?.params?.filterByGiftCards) {
+      setGiftFilter(true);
+      setCardFilter(null);
+    }
+
     fetchReceipts();
     fetchCategories();
     if (route?.params?.tab === 'review') {
       setViewTab('review');
     }
-  }, [route?.params?.tab]));
+  }, [route?.params?.tab, route?.params?.filterByCard, route?.params?.filterByGiftCards]));
+
+  // Re-fetch when card filter changes
+  useFocusEffect(useCallback(() => {
+    fetchReceipts();
+  }, [cardFilter, giftFilter]));
+
+  const clearCardFilter = () => {
+    setCardFilter(null);
+    setGiftFilter(false);
+    // Clear route params so they don't persist
+    navigation.setParams({ filterByCard: undefined, filterByGiftCards: undefined });
+  };
 
   const dynamicTags = useMemo(() => {
     return ["All", ...userCategories.map((c) => c.name)];
@@ -290,6 +402,7 @@ export default function ReceiptsScreen({ navigation, route }) {
 
   const sections = useMemo(() => groupReceipts(filteredReceipts), [filteredReceipts]);
   const hasFilters = searchText !== "" || activeTag !== "All" || dateRange !== "all";
+  const hasCardFilter = !!cardFilter || giftFilter;
   const dateRangeLabel = DATE_RANGES.find((r) => r.value === dateRange)?.label || "All Time";
 
   const renderItem = ({ item }) => {
@@ -358,6 +471,11 @@ export default function ReceiptsScreen({ navigation, route }) {
         </View>
       </View>
 
+      {/* ── Card Filter Chip ── */}
+      {hasCardFilter && viewTab === 'saved' && (
+        <CardFilterChip card={cardFilter} isGiftFilter={giftFilter} onClear={clearCardFilter} />
+      )}
+
       {viewTab === 'review' ? (
         <ToReviewReceipts
           items={reviewItems}
@@ -400,8 +518,10 @@ export default function ReceiptsScreen({ navigation, route }) {
               <Text style={styles.dateRangeText}>{dateRangeLabel}</Text>
               <Icon name="chevron-down" size={14} color={DS.textSecondary} />
             </TouchableOpacity>
-            {hasFilters && (
-              <TouchableOpacity style={styles.clearBtn} onPress={() => { setSearchText(""); setActiveTag("All"); setDateRange("all"); }} activeOpacity={0.7}>
+            {(hasFilters || hasCardFilter) && (
+              <TouchableOpacity style={styles.clearBtn}
+                onPress={() => { setSearchText(""); setActiveTag("All"); setDateRange("all"); if (hasCardFilter) clearCardFilter(); }}
+                activeOpacity={0.7}>
                 <Text style={styles.clearBtnText}>Clear all</Text>
               </TouchableOpacity>
             )}
@@ -409,7 +529,8 @@ export default function ReceiptsScreen({ navigation, route }) {
 
           <FlatList data={sections} keyExtractor={(item) => item.id} renderItem={renderItem}
             contentContainerStyle={[styles.listContent, sections.length === 0 && styles.listContentEmpty]}
-            showsVerticalScrollIndicator={false} ListEmptyComponent={<EmptyState hasFilters={hasFilters} />}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={<EmptyState hasFilters={hasFilters} cardFilter={hasCardFilter} />}
             onRefresh={fetchReceipts} refreshing={loading} />
         </>
       )}

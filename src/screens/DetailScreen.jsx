@@ -25,6 +25,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../config/supabase";
 import AddCategoryModal from "../components/AddCategoryModal";
 import ZoomableImage from "../components/ZoomableImage.jsx";
+import PaymentSection from '../components/PaymentSection';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -536,12 +537,7 @@ export default function DetailScreen({ route, navigation }) {
             </View>
 
             <View style={styles.heroChips}>
-              {paymentMethod && paymentMethod !== "Unknown" && (
-                <View style={styles.chip}>
-                  <Ionicons name="card-outline" size={13} color={DS.textSecondary} />
-                  <Text style={styles.chipText}>{paymentMethod}</Text>
-                </View>
-              )}
+        
               <View style={styles.chip}>
                 <Ionicons
                   name={receipt.status === "completed" ? "checkmark-circle-outline" : "time-outline"}
@@ -569,6 +565,13 @@ export default function DetailScreen({ route, navigation }) {
               )}
             </View>
           </Animated.View>
+          {/* ── Payment Section ── */}
+          <PaymentSection
+            receiptId={receipt.id}
+            editing={editing}
+            navigation={navigation}
+            legacyPaymentMethod={receipt.payment_method}
+          />
 
           {/* ── Details Card (editing mode) ── */}
           {editing && (
@@ -589,8 +592,7 @@ export default function DetailScreen({ route, navigation }) {
                 <Field label="Category" value={category} onChangeText={setCategory} editing icon="pricetag-outline" />
               )}
 
-              <View style={styles.fieldDivider} />
-              <Field label="Payment" value={paymentMethod} onChangeText={setPaymentMethod} editing icon="card-outline" />
+            
             </View>
           )}
 

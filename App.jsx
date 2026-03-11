@@ -31,8 +31,9 @@ import { NotificationProvider } from './src/context/NotificationContext';
 import CategoryScreen from './src/screens/CategoryScreen';
 import { CreditsProvider } from './src/context/CreditsContext';
 import GmailReceiptScreen from './src/screens/GmailReceiptScreen';
-
-
+import MyCardsScreen from './src/screens/MyCardsScreen';
+import CardDetailScreen from './src/screens/CardDetailScreen';
+import GiftCardsScreen from './src/screens/GiftCardsScreen';
 // Auth screens
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -140,9 +141,24 @@ const App = () => {
                         options={{ headerShown: false }} 
                         />
                         <Stack.Screen
+                          name="CardDetail"
+                          component={CardDetailScreen}
+                          options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                          name="GiftCards"
+                          component={GiftCardsScreen}
+                          options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
                         name="ScanGallery"
                         component={ScanGalleryScreen}
                         options={{ animation: 'slide_from_left' }}
+                        />
+                        <Stack.Screen
+                          name="MyCards"
+                          component={MyCardsScreen}
+                          options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen
                         name="GmailReceipts"
